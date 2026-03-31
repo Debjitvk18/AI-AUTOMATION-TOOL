@@ -18,7 +18,9 @@ export function TextNode({ id, data, selected }: NodeProps) {
           value={text}
           onChange={(e) => update(id, { text: e.target.value })}
           placeholder="Enter text…"
-          className="min-h-[88px] w-full resize-y rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1.5 text-[12px] text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-violet-500/50"
+          className="min-h-[88px] w-full resize-y rounded-lg border px-2 py-1.5 text-sm outline-none transition
+            border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500/50
+            dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-200 dark:placeholder:text-zinc-600"
         />
       </NodeShell>
       <Handle

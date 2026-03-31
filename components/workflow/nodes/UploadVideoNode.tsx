@@ -45,7 +45,9 @@ export function UploadVideoNode({ id, data, selected }: NodeProps) {
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1.5 text-left text-[11px] text-zinc-400 transition hover:border-zinc-600 hover:text-zinc-200"
+          className="w-full rounded-lg border px-2 py-1.5 text-left text-xs transition
+            border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700
+            dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
         >
           MP4, MOV, WebM, M4V…
         </button>

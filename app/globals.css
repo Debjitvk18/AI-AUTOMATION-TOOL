@@ -1,6 +1,20 @@
 @import "tailwindcss";
 
 :root {
+  /* Light mode colors */
+  --nf-bg: #ffffff;
+  --nf-panel: #fcfcfc;
+  --nf-panel-2: #f4f4f5; 
+  --nf-border: #e4e4e7;
+  --nf-muted: #71717b;
+  --nf-text: #09090b;
+  --nf-accent: #9333ea;
+  --nf-accent-dim: #7e22ce;
+  --nf-glow: rgba(147, 51, 234, 0.45);
+}
+
+.dark {
+  /* Dark mode colors */
   --nf-bg: #09090b;
   --nf-panel: #0f0f12;
   --nf-panel-2: #141418;
@@ -36,7 +50,7 @@ body {
 /* Dot grid canvas (React Flow background supplements this) */
 .nf-canvas-bg {
   background-color: var(--nf-bg);
-  background-image: radial-gradient(circle, #27272f 1px, transparent 1px);
+  background-image: radial-gradient(circle, var(--nf-border) 1px, transparent 1px);
   background-size: 18px 18px;
 }
 

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getSampleGraph } from "@/lib/sample-workflow";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { WorkflowShell } from "./WorkflowShell";
 
@@ -31,15 +30,15 @@ export function WorkflowPageClient() {
       setGraph(wf.graphJson.nodes as never[], wf.graphJson.edges as never[]);
       return;
     }
-    const sample = getSampleGraph();
+    // Create an empty workflow — user builds from scratch
     const cr = await fetch("/api/workflows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        name: "Sample workflow",
+        name: "Untitled workflow",
         graphJson: {
-          nodes: sample.nodes,
-          edges: sample.edges,
+          nodes: [],
+          edges: [],
           viewport: { x: 0, y: 0, zoom: 1 },
         },
       }),
@@ -48,7 +47,7 @@ export function WorkflowPageClient() {
     if (!cr.ok) return;
     const created = cj.workflow as { id: string; name: string };
     setWorkflowMeta(created.id, created.name);
-    setGraph(sample.nodes, sample.edges);
+    setGraph([], []);
   }, [setGraph, setWorkflowMeta]);
 
   useEffect(() => {

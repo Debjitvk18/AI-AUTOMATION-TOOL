@@ -9,9 +9,9 @@ export default async function HomePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6">
       <div className="max-w-lg text-center">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-100">NextFlow</h1>
-        <p className="mt-3 text-sm leading-relaxed text-zinc-400">
-          Visual LLM workflows with Gemini, React Flow, Trigger.dev, and a Krea-inspired editor.
+        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">NextFlow</h1>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+          Visual AI automation workflows with Gemini, React Flow, Trigger.dev, and a modern node-based editor.
         </p>
       </div>
       <div className="flex gap-3">
@@ -23,7 +23,9 @@ export default async function HomePage() {
         </Link>
         <Link
           href="/sign-up"
-          className="rounded-lg border border-zinc-700 px-5 py-2.5 text-sm font-medium text-zinc-200 transition hover:border-zinc-500"
+          className="rounded-lg border px-5 py-2.5 text-sm font-medium transition
+            border-zinc-300 text-zinc-700 hover:border-zinc-400
+            dark:border-zinc-700 dark:text-zinc-200 dark:hover:border-zinc-500"
         >
           Sign up
         </Link>

@@ -71,6 +71,10 @@ export function LlmNode({ id, data, selected }: NodeProps) {
     }
   }
 
+  const inputClasses = `w-full rounded-lg border px-2 py-1 text-sm outline-none transition
+    border-zinc-200 bg-zinc-50 text-zinc-800 placeholder:text-zinc-400 focus:border-violet-500/50 disabled:cursor-not-allowed disabled:opacity-40
+    dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-200 dark:placeholder:text-zinc-600`;
+
   return (
     <div className="min-w-[300px] max-w-[420px]">
       <Handle
@@ -78,21 +82,21 @@ export function LlmNode({ id, data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: "22%" }}
-        className="!h-2.5 !w-2.5 !border !border-zinc-500 !bg-zinc-800"
+        className="!h-2.5 !w-2.5 !border !border-zinc-400 dark:!border-zinc-500 !bg-zinc-300 dark:!bg-zinc-800"
       />
       <Handle
         id={HANDLE.userMessage}
         type="target"
         position={Position.Left}
         style={{ top: "42%" }}
-        className="!h-2.5 !w-2.5 !border !border-zinc-500 !bg-zinc-800"
+        className="!h-2.5 !w-2.5 !border !border-zinc-400 dark:!border-zinc-500 !bg-zinc-300 dark:!bg-zinc-800"
       />
       <Handle
         id={HANDLE.images}
         type="target"
         position={Position.Left}
         style={{ top: "62%" }}
-        className="!h-2.5 !w-2.5 !border !border-zinc-500 !bg-zinc-800"
+        className="!h-2.5 !w-2.5 !border !border-zinc-400 dark:!border-zinc-500 !bg-zinc-300 dark:!bg-zinc-800"
       />
       <NodeShell
         title="Run LLM"
@@ -100,14 +104,14 @@ export function LlmNode({ id, data, selected }: NodeProps) {
         selected={selected}
         running={running}
       >
-        <label className="block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <label className="block text-xs font-medium uppercase tracking-wide text-zinc-500">
           Model
         </label>
         <select
           title="Model"
           value={d.model ?? "gemini-2.0-flash"}
           onChange={(e) => update(id, { model: e.target.value })}
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1 text-[12px] outline-none focus:border-violet-500/50"
+          className={inputClasses}
         >
           {GEMINI_MODEL_OPTIONS.map((m) => (
             <option key={m.id} value={m.id}>
@@ -116,7 +120,7 @@ export function LlmNode({ id, data, selected }: NodeProps) {
           ))}
         </select>
 
-        <label className="mt-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <label className="mt-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
           System (optional)
         </label>
         <textarea
@@ -124,10 +128,10 @@ export function LlmNode({ id, data, selected }: NodeProps) {
           value={d.systemPrompt ?? ""}
           onChange={(e) => update(id, { systemPrompt: e.target.value })}
           placeholder="System instructions…"
-          className="min-h-[52px] w-full resize-y rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1 text-[12px] outline-none placeholder:text-zinc-600 focus:border-violet-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`min-h-[52px] resize-y ${inputClasses}`}
         />
 
-        <label className="mt-1 block text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <label className="mt-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
           User message
         </label>
         <textarea
@@ -135,7 +139,7 @@ export function LlmNode({ id, data, selected }: NodeProps) {
           value={d.userMessage ?? ""}
           onChange={(e) => update(id, { userMessage: e.target.value })}
           placeholder="Required user message…"
-          className="min-h-[72px] w-full resize-y rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1 text-[12px] outline-none placeholder:text-zinc-600 focus:border-violet-500/50 disabled:cursor-not-allowed disabled:opacity-40"
+          className={`min-h-[72px] resize-y ${inputClasses}`}
         />
 
         <div className="flex items-center gap-2 pt-1">
@@ -143,20 +147,22 @@ export function LlmNode({ id, data, selected }: NodeProps) {
             type="button"
             disabled={busy}
             onClick={() => void runSingle()}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             Run node
           </button>
-          {err ? <span className="text-[11px] text-red-400">{err}</span> : null}
+          {err ? <span className="text-xs text-red-500 dark:text-red-400">{err}</span> : null}
         </div>
 
         {d.lastOutput ? (
-          <div className="mt-2 rounded-lg border border-zinc-800/80 bg-zinc-900/50 p-2 text-[11px] leading-relaxed text-zinc-300">
+          <div className="mt-2 rounded-lg border p-2 text-sm leading-relaxed
+            border-zinc-200 bg-zinc-50 text-zinc-700
+            dark:border-zinc-800/80 dark:bg-zinc-900/50 dark:text-zinc-300">
             {d.lastOutput}
           </div>
         ) : (
-          <p className="text-[10px] text-zinc-600">Output appears here after a successful run.</p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-600">Output appears here after a successful run.</p>
         )}
       </NodeShell>
       <Handle

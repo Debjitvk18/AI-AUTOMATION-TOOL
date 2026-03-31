@@ -22,14 +22,14 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
         type="target"
         position={Position.Left}
         style={{ top: "35%" }}
-        className="!h-2.5 !w-2.5 !border !border-zinc-500 !bg-zinc-800"
+        className="!h-2.5 !w-2.5 !border !border-zinc-400 dark:!border-zinc-500 !bg-zinc-300 dark:!bg-zinc-800"
       />
       <Handle
         id={HANDLE.extractTs}
         type="target"
         position={Position.Left}
         style={{ top: "65%" }}
-        className="!h-2.5 !w-2.5 !border !border-zinc-500 !bg-zinc-800"
+        className="!h-2.5 !w-2.5 !border !border-zinc-400 dark:!border-zinc-500 !bg-zinc-300 dark:!bg-zinc-800"
       />
       <NodeShell
         title="Extract frame"
@@ -37,22 +37,26 @@ export function ExtractFrameNode({ id, data, selected }: NodeProps) {
         selected={selected}
         running={running}
       >
-        <label className="block text-[10px] text-zinc-500">Video URL (if not wired)</label>
+        <label className="block text-xs text-zinc-500 dark:text-zinc-500">Video URL (if not wired)</label>
         <input
            
            title="Video URL"
           disabled={vIn}
           value={d.videoUrl ?? ""}
           onChange={(e) => update(id, { videoUrl: e.target.value })}
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1 text-[11px] outline-none focus:border-violet-500/50 disabled:opacity-40"
+          className="w-full rounded-lg border px-2 py-1 text-xs outline-none transition
+            border-zinc-200 bg-zinc-50 text-zinc-800 focus:border-violet-500/50 disabled:opacity-40
+            dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-200"
         />
-        <label className="mt-2 block text-[10px] text-zinc-500">Timestamp (sec or %)</label>
+        <label className="mt-2 block text-xs text-zinc-500 dark:text-zinc-500">Timestamp (sec or %)</label>
         <input
           disabled={tIn}
           value={d.timestamp ?? "0"}
           onChange={(e) => update(id, { timestamp: e.target.value })}
           placeholder='e.g. 2.5 or "50%"'
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-950/80 px-2 py-1 text-[11px] outline-none focus:border-violet-500/50 disabled:opacity-40"
+          className="w-full rounded-lg border px-2 py-1 text-xs outline-none transition
+            border-zinc-200 bg-zinc-50 text-zinc-800 focus:border-violet-500/50 disabled:opacity-40
+            dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-200"
         />
       </NodeShell>
       <Handle

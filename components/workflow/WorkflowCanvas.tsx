@@ -12,6 +12,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect } from "react";
+import { useTheme } from "next-themes";
 import { isValidEdge } from "@/lib/handles";
 import { parseNodeType } from "@/lib/graph";
 import { wouldCreateCycle } from "@/lib/graph";
@@ -46,6 +47,9 @@ export function WorkflowCanvas() {
   const deleteSelected = useWorkflowStore((s) => s.deleteSelected);
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
+  const { resolvedTheme } = useTheme();
+
+  const isDark = resolvedTheme === "dark";
 
   const isValidConnection = useCallback(
     (c: Edge | Connection) => {
@@ -105,16 +109,16 @@ export function WorkflowCanvas() {
       proOptions={{ hideAttribution: true }}
       className="nf-canvas-bg"
     >
-      <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#27272f" />
+      <Background variant={BackgroundVariant.Dots} gap={18} size={1} color={isDark ? "#27272f" : "#d4d4d8"} />
       <MiniMap
         pannable
         zoomable
-        nodeStrokeColor="#52525b"
-        maskColor="rgba(9,9,11,0.85)"
+        nodeStrokeColor={isDark ? "#52525b" : "#a1a1aa"}
+        maskColor={isDark ? "rgba(9,9,11,0.85)" : "rgba(255,255,255,0.85)"}
         className="rounded-xl!"
       />
       <Controls showInteractive={false} />
-      <Panel position="bottom-left" className="text-[10px] text-zinc-600">
+      <Panel position="bottom-left" className="text-xs text-zinc-400 dark:text-zinc-600">
         Pan · scroll zoom · Del removes selection
       </Panel>
     </ReactFlow>
