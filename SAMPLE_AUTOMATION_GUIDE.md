@@ -1,129 +1,170 @@
-# How to Create a Sample AI Automation Flow in NextFlow
+# How to Create Automation Flows in NextFlow
 
-This guide walks you through building a complete AI automation workflow
-from scratch using the NextFlow visual editor.
+This guide walks you through building workflows from scratch using the NextFlow visual editor.
+It includes both **no-LLM flows** (work even without Gemini API quota) and **AI flows** (require Gemini API key).
 
 ---
 
 ## Prerequisites
 
-Before starting, make sure:
 1. You're signed in at `http://localhost:3000`
-2. The dev server is running (`npm run dev`)
-3. The Trigger.dev worker is running (`npm run trigger`)
-4. You've set your environment variables:
-   - `GEMINI_API_KEY` — in both `.env` and **Trigger.dev dashboard**
-   - `TRANSLOADIT_*` keys — in both `.env` and **Trigger.dev dashboard**
-   - `DATABASE_URL` — in both `.env` and **Trigger.dev dashboard**
+2. Dev server running: `npm run dev`
+3. Trigger.dev worker running: `npm run trigger`
+4. Environment variables set in both `.env` **and** Trigger.dev dashboard:
+   - `GEMINI_API_KEY` (only needed for AI/LLM flows)
+   - `TRANSLOADIT_*` keys (only needed for file uploads)
+   - `DATABASE_URL`
 
 ---
 
-## Example 1: "Describe an Image" Flow
+## 🟢 Example 1: "API Fetch + Data Transform" (No LLM Required)
+
+**Goal**: Fetch data from a public API → transform the JSON → display result.
+
+### Steps:
+
+1. **Add HTTP Request node** (from Integrations sidebar)
+   - Method: `GET`
+   - URL: `https://jsonplaceholder.typicode.com/posts/1`
+   - Leave headers & body empty
+
+2. **Add Data Transform node** (from Logic & Data sidebar)
+   - Operation: `Extract JSON Field`
+   - Template: `title`
+
+3. **Connect**: HTTP Request → Data Transform (drag from orange output → cyan input)
+
+4. Click **Save** → **Run all**
+
+5. **Expected result**: The Data Transform node outputs just the post title from the API response.
+
+---
+
+## 🟢 Example 2: "Manual Trigger + If/Else Condition" (No LLM Required)
+
+**Goal**: Provide input data → check a condition → route true/false.
+
+### Steps:
+
+1. **Add Manual Trigger node** (from Triggers sidebar)
+   - Input Data: `{"status": "active", "count": 15}`
+
+2. **Add If/Else node** (from Logic & Data sidebar)
+   - Field: `count`
+   - Operator: `Greater Than`
+   - Value: `10`
+
+3. **Add two Text nodes**:
+   - Text node 1: `Count is above threshold!`
+   - Text node 2: `Count is below threshold.`
+
+4. **Connect**:
+   - Manual Trigger → If/Else (input)
+
+5. Click **Save** → **Run all**
+
+6. **Expected result**: If/Else evaluates `count > 10` → result is `true`.
+
+---
+
+## 🟢 Example 3: "API Chain" (No LLM Required)
+
+**Goal**: Fetch a user → extract their name → send as notification.
+
+### Steps:
+
+1. **Add HTTP Request node**
+   - Method: `GET`
+   - URL: `https://jsonplaceholder.typicode.com/users/1`
+
+2. **Add Data Transform node**
+   - Operation: `Extract JSON Field`
+   - Template: `name`
+
+3. **Add another Data Transform node**
+   - Operation: `Template (use {{input}})`
+   - Template: `Hello, {{input}}! Your workflow ran successfully.`
+
+4. **Add Send Notification node**
+   - Type: `Console Log`
+   - Message template: `{{input}}`
+
+5. **Connect in chain**: HTTP Request → Transform 1 → Transform 2 → Notification
+
+6. Click **Save** → **Run all**
+
+7. **Expected result**: Console logs `"Hello, Leanne Graham! Your workflow ran successfully."`
+
+---
+
+## 🟢 Example 4: "Webhook + Data Processing" (No LLM Required)
+
+**Goal**: Set up a webhook → receive external data → process it.
+
+### Steps:
+
+1. **Add Webhook Trigger node** (auto-generates a unique URL)
+   - Copy the webhook URL shown in the node
+
+2. **Open a terminal** and send test data:
+   ```bash
+   curl -X POST http://localhost:3000/api/webhooks/trigger/YOUR_HOOK_ID \
+     -H "Content-Type: application/json" \
+     -d '{"event": "order_placed", "amount": 99.99}'
+   ```
+
+3. **Add Data Transform node**
+   - Operation: `JSON Parse`
+
+4. **Connect**: Webhook Trigger → Data Transform
+
+5. Click **Save** → **Run all**
+
+6. **Expected result**: The transform node outputs the formatted JSON that was sent to the webhook.
+
+---
+
+## 🟢 Example 5: "Text Transform Pipeline" (No LLM Required)
+
+**Goal**: Chain multiple data transformations.
+
+### Steps:
+
+1. **Add Text node**: `hello world this is nextflow`
+
+2. **Add Data Transform #1** (Uppercase)
+   - Operation: `Uppercase`
+
+3. **Add Data Transform #2** (Template)
+   - Operation: `Template (use {{input}})`
+   - Template: `[PROCESSED] {{input}} [END]`
+
+4. **Add Data Transform #3** (Base64 Encode)
+   - Operation: `Base64 Encode`
+
+5. **Connect in chain**: Text → Transform 1 → Transform 2 → Transform 3
+
+6. Click **Save** → **Run all**
+
+7. **Expected result**: Original text → UPPERCASE → wrapped in template → Base64 encoded.
+
+---
+
+## 🔵 Example 6: "Describe an Image" (Requires LLM)
 
 **Goal**: Upload an image → AI writes a description of it.
 
-### Step 1: Add a Text node (System Prompt)
-1. In the left sidebar, click **"Text"**
-2. A Text node appears on the canvas
-3. Type in: `You are an expert image analyst. Describe images in detail.`
+### Steps:
 
-### Step 2: Add a Text node (User Message)
-1. Click **"Text"** again from the sidebar
-2. Type in: `What do you see in this image? Describe it in 2-3 sentences.`
-
-### Step 3: Add an Upload Image node
-1. Click **"Upload image"** from the sidebar
-2. Click **"Choose JPG, PNG, WebP, GIF…"** and select an image from your computer
-3. Wait for the upload to complete — you'll see a preview appear
-
-### Step 4: Add a Run LLM node
-1. Click **"Run LLM"** from the sidebar
-2. Select your model (e.g., **Gemini 2.0 Flash**)
-
-### Step 5: Connect the nodes
-1. **Drag** from the **Text node (System Prompt)** right handle → to the **LLM node** left handle (top one = "system_prompt")
-2. **Drag** from the **Text node (User Message)** right handle → to the **LLM node** left handle (middle one = "user_message")
-3. **Drag** from the **Upload Image** node right handle → to the **LLM node** left handle (bottom one = "images")
-
-### Step 6: Save & Run
-1. Click **"Save"** in the top toolbar
-2. Click **"Run all"** to execute the entire flow
-3. Check the **"Workflow history"** panel on the right for status
-4. Once complete, the LLM node will show the AI-generated description!
-
----
-
-## Example 2: "Extract Frame from Video + Analyze" Flow
-
-**Goal**: Upload a video → extract a specific frame → AI analyzes it.
-
-### Step 1: Add Upload Video node
-1. Click **"Upload video"** from the sidebar
-2. Upload an MP4/MOV file
-
-### Step 2: Add Extract Frame node
-1. Click **"Extract frame"** from the sidebar
-2. Set the timestamp (e.g., `5` for 5 seconds, or `50%` for the midpoint)
-
-### Step 3: Connect Video → Extract Frame
-1. **Drag** from **Upload Video** right handle → **Extract Frame** left handle (top = "video_url")
-
-### Step 4: Add LLM node
-1. Click **"Run LLM"**
-2. Type a user message directly in the node: `What is happening in this frame?`
-
-### Step 5: Connect Extract Frame → LLM
-1. **Drag** from **Extract Frame** right handle → **LLM** left handle (bottom = "images")
-
-### Step 6: Save & Run
-1. Click **Save**, then **Run all**
-2. The flow will: upload video → extract frame at timestamp → AI analyzes frame
-
----
-
-## Example 3: "AI Copywriter" Flow (Text-only)
-
-**Goal**: Give AI a role + prompt → get creative text output.
-
-### Step 1: Add Text node (System)
-- Type: `You are a creative copywriter for a luxury brand.`
-
-### Step 2: Add Text node (User)
-- Type: `Write a 3-line tagline for a matte black water bottle called "HydroElite".`
-
-### Step 3: Add Run LLM node
-- Select **Gemini 2.0 Flash** model
-
-### Step 4: Connect
-- Text (System) → LLM (system_prompt)
-- Text (User) → LLM (user_message)
-
-### Step 5: Run
-- Click **Save** → **Run all**
-- Read the output in the LLM node!
-
----
-
-## Example 4: "Crop + Analyze" Flow
-
-**Goal**: Upload image → crop a specific region → AI analyzes the cropped region.
-
-### Step 1: Add Upload Image + Crop Image nodes
-1. Add **Upload Image** and upload your file
-2. Add **Crop Image** node
-3. Set crop parameters: `X: 10, Y: 10, W: 50, H: 50` (crops the top-left quarter-ish)
-
-### Step 2: Connect Image → Crop
-- **Upload Image** right handle → **Crop Image** left handle (top = "image_url")
-
-### Step 3: Add LLM with message
-- Add **Run LLM**
-- User message: `What is in this cropped portion of the image?`
-
-### Step 4: Connect Crop → LLM
-- **Crop Image** right handle → **LLM** left handle (bottom = "images")
-
-### Step 5: Save & Run
+1. **Add Text node** (System): `You are an expert image analyst.`
+2. **Add Text node** (User): `What do you see in this image? Describe it in 2-3 sentences.`
+3. **Add Upload Image node** → upload a file
+4. **Add Run LLM node** → select Gemini 2.0 Flash
+5. **Connect**:
+   - Text (System) → LLM (`system_prompt`)
+   - Text (User) → LLM (`user_message`)
+   - Upload Image → LLM (`images`)
+6. Click **Save** → **Run all**
 
 ---
 
@@ -131,22 +172,30 @@ Before starting, make sure:
 
 | Tip | Details |
 |-----|---------|
-| **Drag to connect** | Drag from any purple (output) handle on the right side of a node to a gray (input) handle on the left side of another node |
-| **Delete nodes** | Select a node by clicking it, then press `Delete` or `Backspace` |
+| **Drag to connect** | Drag from any colored handle on the right → gray handle on the left |
+| **Delete nodes** | Select node → press `Delete` or `Backspace` |
 | **Undo/Redo** | `Ctrl+Z` / `Ctrl+Y` |
-| **Run selected only** | Select specific nodes (click + hold), then click "Run selected" |
-| **Export/Import** | Use the download/upload icons in the header to export or import workflow JSON files |
-| **Theme toggle** | Click the Sun/Moon icon in the header to switch between dark and light mode |
+| **Run selected only** | Select nodes → click "Run selected" |
+| **Delete run history** | Click the trash icon next to any run in the right panel |
+| **Export/Import** | Use the download/upload icons in the header |
+| **Theme toggle** | Sun/Moon icon in the header |
 
 ---
 
 ## Node Reference
 
-| Node Type | Inputs | Output | Description |
-|-----------|--------|--------|-------------|
-| **Text** | — | text | Provides a static text value |
-| **Upload Image** | — | image URL | Upload and host an image file |
-| **Upload Video** | — | video URL | Upload and host a video file |
-| **Run LLM** | system_prompt (text), user_message (text), images (image[]) | text | Calls Google Gemini AI |
-| **Crop Image** | image_url (image), x/y/w/h (text) | image URL | Crops an image by percentage |
-| **Extract Frame** | video_url (video), timestamp (text) | image URL | Extracts a frame from a video |
+| Node Type | Category | Inputs | Output | Needs External Service? |
+|-----------|----------|--------|--------|------------------------|
+| **Text** | Logic & Data | — | text | No |
+| **Manual Trigger** | Triggers | — | text (JSON) | No |
+| **Webhook Trigger** | Triggers | — | text (payload) | No |
+| **Schedule Trigger** | Triggers | — | text (timestamp) | No |
+| **If / Else** | Logic & Data | condition (text) | true/false text | No |
+| **Data Transform** | Logic & Data | input (text) | text | No |
+| **HTTP Request** | Integrations | url, body (text) | text (response) | External API |
+| **Send Notification** | Integrations | input (text) | text (status) | Webhook URL |
+| **Upload Image** | AI & Media | — | image URL | Transloadit |
+| **Upload Video** | AI & Media | — | video URL | Transloadit |
+| **Run LLM** | AI & Media | system, user, images | text | Gemini API |
+| **Crop Image** | AI & Media | image, x/y/w/h | image URL | Transloadit |
+| **Extract Frame** | AI & Media | video, timestamp | image URL | Transloadit + FFmpeg |

@@ -15,8 +15,12 @@ export const runLlmTask = task({
   id: "run-llm",
   retry: { maxAttempts: 2 },
   run: async (payload: RunLlmPayload) => {
+    console.log(`[run-llm] Starting — model: ${payload.model}, msgLen: ${payload.userMessage.length}, images: ${payload.imageUrls.length}`);
     const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY is not set in Trigger.dev environment");
+    if (!apiKey) {
+      console.error("[run-llm] GEMINI_API_KEY is not set!");
+      throw new Error("GEMINI_API_KEY is not set in Trigger.dev environment");
+    }
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
@@ -31,6 +35,7 @@ export const runLlmTask = task({
     ];
 
     for (const url of payload.imageUrls) {
+      console.log(`[run-llm] Fetching image: ${url.slice(0, 80)}…`);
       const r = await fetch(url);
       if (!r.ok) throw new Error(`Failed to fetch image: ${url}`);
       const buf = Buffer.from(await r.arrayBuffer());
@@ -43,10 +48,12 @@ export const runLlmTask = task({
       });
     }
 
+    console.log(`[run-llm] Calling Gemini API (${parts.length} parts)…`);
     const result = await model.generateContent({
       contents: [{ role: "user", parts }],
     });
     const text = result.response.text();
+    console.log(`[run-llm] ✓ Response received — ${text.length} chars`);
     return { outputText: text };
   },
 });

@@ -44,3 +44,6 @@ prisma/migrations/**/migration_lock.toml
 
 # trigger
 .trigger
+
+# Feature tracker
+NEXTFLOW_FEATURES.md

@@ -3,6 +3,7 @@ import type { NodeTypeId } from "@/lib/node-types";
 export type PortKind = "text" | "image" | "video";
 
 export const HANDLE = {
+  // --- existing ---
   textOut: "text-out",
   imageOut: "image-out",
   videoOut: "video-out",
@@ -19,6 +20,26 @@ export const HANDLE = {
   extractVideo: "video_url",
   extractTs: "timestamp",
   extractOut: "output",
+  // --- HTTP Request ---
+  httpUrlIn: "http-url-in",
+  httpBodyIn: "http-body-in",
+  httpOut: "http-response-out",
+  // --- If/Else ---
+  conditionIn: "condition-input",
+  trueOut: "true-out",
+  falseOut: "false-out",
+  // --- Data Transform ---
+  transformIn: "transform-input",
+  transformOut: "transform-out",
+  // --- Webhook Trigger ---
+  webhookOut: "webhook-out",
+  // --- Notification ---
+  notificationIn: "notification-input",
+  notificationOut: "notification-out",
+  // --- Schedule Trigger ---
+  scheduleOut: "schedule-out",
+  // --- Manual Trigger ---
+  triggerOut: "trigger-out",
 } as const;
 
 export function sourceHandlePortKind(
@@ -26,12 +47,22 @@ export function sourceHandlePortKind(
   handleId: string | null | undefined,
 ): PortKind | null {
   if (!handleId) return null;
+  // Existing
   if (handleId === HANDLE.textOut) return "text";
   if (handleId === HANDLE.imageOut) return "image";
   if (handleId === HANDLE.videoOut) return "video";
   if (handleId === HANDLE.llmOut) return "text";
   if (handleId === HANDLE.cropOut) return "image";
   if (handleId === HANDLE.extractOut) return "image";
+  // New nodes — all output text
+  if (handleId === HANDLE.httpOut) return "text";
+  if (handleId === HANDLE.trueOut) return "text";
+  if (handleId === HANDLE.falseOut) return "text";
+  if (handleId === HANDLE.transformOut) return "text";
+  if (handleId === HANDLE.webhookOut) return "text";
+  if (handleId === HANDLE.notificationOut) return "text";
+  if (handleId === HANDLE.scheduleOut) return "text";
+  if (handleId === HANDLE.triggerOut) return "text";
   return null;
 }
 
@@ -58,6 +89,19 @@ export function targetHandleAccepts(
     case "extractFrame":
       if (handleId === HANDLE.extractVideo) return "video";
       if (handleId === HANDLE.extractTs) return "text";
+      return null;
+    // New nodes
+    case "httpRequest":
+      if (handleId === HANDLE.httpUrlIn || handleId === HANDLE.httpBodyIn) return "text";
+      return null;
+    case "ifElse":
+      if (handleId === HANDLE.conditionIn) return "text";
+      return null;
+    case "dataTransform":
+      if (handleId === HANDLE.transformIn) return "text";
+      return null;
+    case "notification":
+      if (handleId === HANDLE.notificationIn) return "text";
       return null;
     default:
       return null;

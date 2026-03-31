@@ -18,12 +18,21 @@ import { parseNodeType } from "@/lib/graph";
 import { wouldCreateCycle } from "@/lib/graph";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { AnimatedPurpleEdge } from "./edges/AnimatedPurpleEdge";
+// Existing nodes
 import { CropImageNode } from "./nodes/CropImageNode";
 import { ExtractFrameNode } from "./nodes/ExtractFrameNode";
 import { LlmNode } from "./nodes/LlmNode";
 import { TextNode } from "./nodes/TextNode";
 import { UploadImageNode } from "./nodes/UploadImageNode";
 import { UploadVideoNode } from "./nodes/UploadVideoNode";
+// New n8n-style nodes
+import { HttpRequestNode } from "./nodes/HttpRequestNode";
+import { IfElseNode } from "./nodes/IfElseNode";
+import { DataTransformNode } from "./nodes/DataTransformNode";
+import { WebhookTriggerNode } from "./nodes/WebhookTriggerNode";
+import { NotificationNode } from "./nodes/NotificationNode";
+import { ScheduleTriggerNode } from "./nodes/ScheduleTriggerNode";
+import { ManualTriggerNode } from "./nodes/ManualTriggerNode";
 
 const nodeTypes = {
   text: TextNode,
@@ -32,6 +41,14 @@ const nodeTypes = {
   llm: LlmNode,
   cropImage: CropImageNode,
   extractFrame: ExtractFrameNode,
+  // n8n-style nodes
+  httpRequest: HttpRequestNode,
+  ifElse: IfElseNode,
+  dataTransform: DataTransformNode,
+  webhookTrigger: WebhookTriggerNode,
+  notification: NotificationNode,
+  scheduleTrigger: ScheduleTriggerNode,
+  manualTrigger: ManualTriggerNode,
 };
 
 const edgeTypes = {

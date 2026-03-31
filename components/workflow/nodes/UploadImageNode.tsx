@@ -1,8 +1,8 @@
 "use client";
 
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import { ImageIcon } from "lucide-react";
-import { useRef } from "react";
+import { ImageIcon, Loader2 } from "lucide-react";
+import { useRef, useState } from "react";
 import { HANDLE } from "@/lib/handles";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { NodeShell } from "./NodeShell";
@@ -12,15 +12,27 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
   const running = useWorkflowStore((s) => s.runningNodeIds.has(id));
   const url = String((data as { url?: string }).url ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function onFile(f: File) {
-    const fd = new FormData();
-    fd.set("file", f);
-    fd.set("filename", f.name);
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
-    const j = await res.json();
-    if (!res.ok) throw new Error(j.error ?? "Upload failed");
-    update(id, { url: j.url as string });
+    setUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.set("file", f);
+      fd.set("filename", f.name);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Upload failed");
+      update(id, { url: j.url as string });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Upload failed";
+      setError(msg);
+      console.error("[UploadImage]", msg);
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -44,13 +56,18 @@ export function UploadImageNode({ id, data, selected }: NodeProps) {
         />
         <button
           type="button"
+          disabled={uploading}
           onClick={() => inputRef.current?.click()}
-          className="w-full rounded-lg border px-2 py-1.5 text-left text-xs transition
+          className="inline-flex w-full items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left text-xs transition disabled:opacity-60
             border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700
             dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-200"
         >
-          Choose JPG, PNG, WebP, GIF…
+          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {uploading ? "Uploading…" : "Choose JPG, PNG, WebP, GIF…"}
         </button>
+        {error ? (
+          <p className="mt-1 text-xs text-red-500 dark:text-red-400">{error}</p>
+        ) : null}
         {url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={url} alt="" className="mt-1 max-h-40 w-full rounded-lg object-contain" />

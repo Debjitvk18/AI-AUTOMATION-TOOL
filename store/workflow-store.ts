@@ -66,6 +66,21 @@ function defaultData(type: string): Record<string, unknown> {
       };
     case "extractFrame":
       return { videoUrl: "", timestamp: "0" };
+    // --- n8n-style nodes ---
+    case "httpRequest":
+      return { method: "GET", url: "", headers: "{}", body: "", lastResponse: "" };
+    case "ifElse":
+      return { field: "", operator: "equals", value: "", lastResult: "" };
+    case "dataTransform":
+      return { operation: "jsonParse", template: "", lastOutput: "" };
+    case "webhookTrigger":
+      return { hookId: "", lastPayload: "" };
+    case "notification":
+      return { notifType: "webhook", webhookUrl: "", message: "", lastStatus: "" };
+    case "scheduleTrigger":
+      return { cron: "0 * * * *", description: "Every hour", lastRun: "" };
+    case "manualTrigger":
+      return { inputData: "{}", lastOutput: "" };
     default:
       return {};
   }

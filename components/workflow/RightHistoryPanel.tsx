@@ -1,8 +1,8 @@
 "use client";
 
 import type { NodeRun, RunScope, RunStatus, WorkflowRun } from "@prisma/client";
-import { ChevronRight, History } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ChevronRight, History, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 
 type RunWithNodes = WorkflowRun & { nodeRuns: NodeRun[] };
@@ -44,24 +44,42 @@ export function RightHistoryPanel({
   const [runs, setRuns] = useState<RunWithNodes[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const fetchRuns = useCallback(async () => {
+    if (!workflowId) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/runs`);
+      const j = await res.json();
+      if (res.ok) setRuns(j.runs as RunWithNodes[]);
+    } finally {
+      setLoading(false);
+    }
+  }, [workflowId]);
 
   useEffect(() => {
+    void fetchRuns();
+  }, [fetchRuns, refreshKey]);
+
+  const deleteRun = useCallback(async (runId: string) => {
     if (!workflowId) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(`/api/workflows/${workflowId}/runs`);
-        const j = await res.json();
-        if (!cancelled && res.ok) setRuns(j.runs as RunWithNodes[]);
-      } finally {
-        if (!cancelled) setLoading(false);
+    setDeletingId(runId);
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/runs/${runId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setRuns((prev) => prev.filter((r) => r.id !== runId));
+        if (expanded === runId) setExpanded(null);
+        console.log(`[NextFlow] Deleted run ${runId}`);
+      } else {
+        console.error("[NextFlow] Failed to delete run");
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [workflowId, refreshKey]);
+    } finally {
+      setDeletingId(null);
+    }
+  }, [workflowId, expanded]);
 
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l bg-[var(--nf-panel)]
@@ -84,39 +102,54 @@ export function RightHistoryPanel({
           <ul className="space-y-1">
             {runs.map((r) => (
               <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => setExpanded((x) => (x === r.id ? null : r.id))}
-                  className="flex w-full items-start gap-2 rounded-lg border px-2 py-2 text-left transition
-                    border-zinc-200 bg-white/60 hover:border-zinc-300
-                    dark:border-zinc-800/80 dark:bg-zinc-950/40 dark:hover:border-zinc-700"
-                >
-                  <ChevronRight
-                    className={cn(
-                      "mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400 transition dark:text-zinc-600",
-                      expanded === r.id && "rotate-90",
-                    )}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span
-                        className={cn(
-                          "rounded px-1.5 py-0.5 text-xs font-medium uppercase",
-                          badge(r.status),
-                        )}
-                      >
-                        {r.status}
-                      </span>
-                      <span className="text-xs text-zinc-500">
-                        {new Date(r.startedAt).toLocaleString()}
-                      </span>
+                <div className="flex items-start gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded((x) => (x === r.id ? null : r.id))}
+                    className="flex flex-1 items-start gap-2 rounded-lg border px-2 py-2 text-left transition
+                      border-zinc-200 bg-white/60 hover:border-zinc-300
+                      dark:border-zinc-800/80 dark:bg-zinc-950/40 dark:hover:border-zinc-700"
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "mt-0.5 h-3.5 w-3.5 shrink-0 text-zinc-400 transition dark:text-zinc-600",
+                        expanded === r.id && "rotate-90",
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-xs font-medium uppercase",
+                            badge(r.status),
+                          )}
+                        >
+                          {r.status}
+                        </span>
+                        <span className="text-xs text-zinc-500">
+                          {new Date(r.startedAt).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">{scopeLabel(r.scope)}</p>
+                      {r.durationMs != null ? (
+                        <p className="text-xs text-zinc-400 dark:text-zinc-600">{r.durationMs} ms</p>
+                      ) : null}
                     </div>
-                    <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">{scopeLabel(r.scope)}</p>
-                    {r.durationMs != null ? (
-                      <p className="text-xs text-zinc-400 dark:text-zinc-600">{r.durationMs} ms</p>
-                    ) : null}
-                  </div>
-                </button>
+                  </button>
+                  {/* Delete run button */}
+                  <button
+                    type="button"
+                    disabled={deletingId === r.id}
+                    onClick={() => void deleteRun(r.id)}
+                    className="mt-1 shrink-0 rounded-lg p-1.5 text-zinc-300 transition
+                      hover:bg-red-50 hover:text-red-500
+                      dark:text-zinc-700 dark:hover:bg-red-950/30 dark:hover:text-red-400
+                      disabled:opacity-40"
+                    title="Delete run"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
                 {expanded === r.id ? (
                   <div className="ml-6 mt-1 space-y-2 border-l border-zinc-200 pl-3 dark:border-zinc-800">
                     {r.nodeRuns.map((nr) => (
@@ -124,7 +157,7 @@ export function RightHistoryPanel({
                         bg-zinc-50 dark:bg-zinc-950/50">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                            {nr.nodeType} <span className="text-zinc-400 dark:text-zinc-600">({nr.nodeId})</span>
+                            {nr.nodeType} <span className="text-zinc-400 dark:text-zinc-600">({nr.nodeId.slice(0, 8)}…)</span>
                           </span>
                           <span
                             className={cn(
@@ -132,6 +165,7 @@ export function RightHistoryPanel({
                               nr.status === "SUCCESS" && "text-emerald-600 dark:text-emerald-400",
                               nr.status === "FAILED" && "text-red-600 dark:text-red-400",
                               nr.status === "RUNNING" && "text-amber-600 dark:text-amber-300",
+                              nr.status === "PENDING" && "text-zinc-400 dark:text-zinc-600",
                             )}
                           >
                             {nr.status}

@@ -1,42 +1,87 @@
 "use client";
 
 import {
+  Bell,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Crop,
   Film,
+  GitBranch,
+  Globe,
   ImageIcon,
+  Play,
   Search,
+  Shuffle,
   Sparkles,
   Type,
   Video,
+  Webhook,
 } from "lucide-react";
 import { useState } from "react";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { cn } from "@/lib/cn";
 
-const quick: { type: string; label: string; icon: React.ReactNode }[] = [
-  { type: "text", label: "Text", icon: <Type className="h-4 w-4" /> },
-  { type: "uploadImage", label: "Upload image", icon: <ImageIcon className="h-4 w-4" /> },
-  { type: "uploadVideo", label: "Upload video", icon: <Video className="h-4 w-4" /> },
-  { type: "llm", label: "Run LLM", icon: <Sparkles className="h-4 w-4" /> },
-  { type: "cropImage", label: "Crop image", icon: <Crop className="h-4 w-4" /> },
-  { type: "extractFrame", label: "Extract frame", icon: <Film className="h-4 w-4" /> },
+type NodeItem = { type: string; label: string; icon: React.ReactNode };
+type Category = { name: string; items: NodeItem[] };
+
+const categories: Category[] = [
+  {
+    name: "Triggers",
+    items: [
+      { type: "manualTrigger", label: "Manual Trigger", icon: <Play className="h-4 w-4" /> },
+      { type: "webhookTrigger", label: "Webhook Trigger", icon: <Webhook className="h-4 w-4" /> },
+      { type: "scheduleTrigger", label: "Schedule Trigger", icon: <Clock className="h-4 w-4" /> },
+    ],
+  },
+  {
+    name: "AI & Media",
+    items: [
+      { type: "llm", label: "Run LLM", icon: <Sparkles className="h-4 w-4" /> },
+      { type: "uploadImage", label: "Upload Image", icon: <ImageIcon className="h-4 w-4" /> },
+      { type: "uploadVideo", label: "Upload Video", icon: <Video className="h-4 w-4" /> },
+      { type: "cropImage", label: "Crop Image", icon: <Crop className="h-4 w-4" /> },
+      { type: "extractFrame", label: "Extract Frame", icon: <Film className="h-4 w-4" /> },
+    ],
+  },
+  {
+    name: "Logic & Data",
+    items: [
+      { type: "ifElse", label: "If / Else", icon: <GitBranch className="h-4 w-4" /> },
+      { type: "dataTransform", label: "Data Transform", icon: <Shuffle className="h-4 w-4" /> },
+      { type: "text", label: "Text", icon: <Type className="h-4 w-4" /> },
+    ],
+  },
+  {
+    name: "Integrations",
+    items: [
+      { type: "httpRequest", label: "HTTP Request", icon: <Globe className="h-4 w-4" /> },
+      { type: "notification", label: "Send Notification", icon: <Bell className="h-4 w-4" /> },
+    ],
+  },
 ];
+
+const allItems = categories.flatMap((c) => c.items);
 
 export function LeftSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [q, setQ] = useState("");
   const addNode = useWorkflowStore((s) => s.addNode);
 
-  const filtered = quick.filter((x) => x.label.toLowerCase().includes(q.toLowerCase()));
+  const query = q.toLowerCase();
+  const filteredCategories = categories
+    .map((cat) => ({
+      ...cat,
+      items: cat.items.filter((x) => x.label.toLowerCase().includes(query)),
+    }))
+    .filter((cat) => cat.items.length > 0);
 
   return (
     <aside
       className={cn(
         "flex h-full shrink-0 flex-col border-r bg-[var(--nf-panel)] transition-[width]",
         "border-zinc-200 dark:border-zinc-800/80",
-        collapsed ? "w-14" : "w-60",
+        collapsed ? "w-14" : "w-64",
       )}
     >
       <button
@@ -64,35 +109,39 @@ export function LeftSidebar() {
               />
             </div>
           </div>
-          <div className="px-2 py-2">
-            <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Quick access
-            </p>
-            <div className="flex flex-col gap-1">
-              {filtered.map((item) => (
-                <button
-                  key={item.type}
-                  type="button"
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData("application/reactflow", item.type);
-                    e.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => addNode(item.type)}
-                  className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-2 text-left text-xs transition
-                    text-zinc-700 hover:border-zinc-300 hover:bg-zinc-100
-                    dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/80"
-                >
-                  <span className="text-violet-500 dark:text-violet-400">{item.icon}</span>
-                  {item.label}
-                </button>
-              ))}
-            </div>
+          <div className="flex-1 overflow-y-auto px-2 py-2">
+            {filteredCategories.map((cat) => (
+              <div key={cat.name} className="mb-3">
+                <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                  {cat.name}
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {cat.items.map((item) => (
+                    <button
+                      key={item.type}
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData("application/reactflow", item.type);
+                        e.dataTransfer.effectAllowed = "move";
+                      }}
+                      onClick={() => addNode(item.type)}
+                      className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left text-xs transition
+                        text-zinc-700 hover:border-zinc-300 hover:bg-zinc-100
+                        dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/80"
+                    >
+                      <span className="text-violet-500 dark:text-violet-400">{item.icon}</span>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </>
       ) : (
-        <div className="flex flex-col items-center gap-2 py-2">
-          {quick.map((item) => (
+        <div className="flex flex-col items-center gap-1 overflow-y-auto py-2">
+          {allItems.map((item) => (
             <button
               key={item.type}
               type="button"

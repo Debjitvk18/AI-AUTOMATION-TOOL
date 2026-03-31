@@ -21,3 +21,19 @@ export async function GET(_req: Request, { params }: RouteParams) {
   if (!run) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ run });
 }
+
+export async function DELETE(_req: Request, { params }: RouteParams) {
+  const { userId } = await auth();
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { id: workflowId, runId } = await params;
+
+  const wf = await prisma.workflow.findFirst({ where: { id: workflowId, userId } });
+  if (!wf) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const run = await prisma.workflowRun.findFirst({ where: { id: runId, workflowId, userId } });
+  if (!run) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // NodeRuns cascade-delete thanks to Prisma onDelete: Cascade
+  await prisma.workflowRun.delete({ where: { id: runId } });
+  return NextResponse.json({ ok: true });
+}

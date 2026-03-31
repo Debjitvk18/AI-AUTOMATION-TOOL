@@ -7,6 +7,14 @@ export const nodeTypeIdSchema = z.enum([
   "llm",
   "cropImage",
   "extractFrame",
+  // n8n-style nodes
+  "httpRequest",
+  "ifElse",
+  "dataTransform",
+  "webhookTrigger",
+  "notification",
+  "scheduleTrigger",
+  "manualTrigger",
 ]);
 
 export type NodeTypeId = z.infer<typeof nodeTypeIdSchema>;

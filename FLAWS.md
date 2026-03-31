@@ -24,13 +24,17 @@ organized by severity and category, with fix status.
 
 - [x] **Extract frame fails — depends on broken Transloadit**
   - **Where**: `trigger/extract-frame.ts`
-  - **Problem**: After ffmpeg extracts a frame, it calls `uploadBufferToTransloadit()` to upload the PNG. Since that function was broken, the frame extraction always failed at the upload stage.
-  - **Fix**: Fixed by the Transloadit polling fix above. Also needs `TRANSLOADIT_*` keys in Trigger.dev env vars.
+  - **Fix**: Fixed by the Transloadit polling fix above.
 
 - [x] **Crop image fails — same Transloadit dependency**
   - **Where**: `trigger/crop-image.ts`
-  - **Problem**: Same as above — calls `uploadBufferToTransloadit()` for the cropped output.
-  - **Fix**: Same as above.
+  - **Fix**: Fixed by the Transloadit polling fix above.
+
+- [x] **Workflows stuck in PENDING / extremely slow**
+  - **Where**: `trigger/orchestrator.ts`, `trigger/index.ts`
+  - **Problem 1**: New trigger tasks (`http-request.ts`, `send-notification.ts`) were NOT exported in `trigger/index.ts`, so Trigger.dev never registered them. `triggerAndWait` calls would hang forever.
+  - **Problem 2**: Simple nodes (text, upload, triggers) were calling `passthroughTask.triggerAndWait()` — spawning a full Trigger.dev sub-task run for what's just a data passthrough, adding 5-10 seconds of overhead per node.
+  - **Fix**: (1) Added missing exports to `trigger/index.ts`. (2) Rewrote orchestrator to execute simple nodes **inline** — text, upload, manualTrigger, webhookTrigger, scheduleTrigger, ifElse, dataTransform all run instantly without sub-tasks. Only LLM, crop, extractFrame, httpRequest, and notification still use `triggerAndWait`.
 
 ---
 
@@ -38,64 +42,49 @@ organized by severity and category, with fix status.
 
 - [x] **Pre-defined "Sample workflow" forced on new users**
   - **Where**: `components/workflow/WorkflowPageClient.tsx`
-  - **Problem**: When a user has no workflows, `bootstrap()` called `getSampleGraph()` and created a "Sample workflow" with 7 pre-placed nodes and 3 edges. Users couldn't start with an empty canvas.
-  - **Fix**: Changed to create an empty workflow (`nodes: [], edges: []`) named "Untitled workflow".
+  - **Fix**: Changed to create an empty workflow.
 
 - [x] **Light theme completely broken — invisible text everywhere**
-  - **Where**: All components — `NodeShell`, `WorkflowShell`, `LeftSidebar`, `RightHistoryPanel`, all node components
-  - **Problem**: Every component used hardcoded dark-mode Tailwind classes: `text-zinc-200`, `text-zinc-400`, `bg-zinc-950`, `border-zinc-800`, etc. In light mode, this resulted in white/light-gray text on a white background — completely unreadable.
-  - **Fix**: Added `dark:` prefix variants to all color classes. Light mode now uses `text-zinc-700/800`, `bg-zinc-50/white`, `border-zinc-200/300` etc.
+  - **Where**: All components
+  - **Fix**: Added `dark:` prefix variants to all color classes.
 
 - [x] **Font sizes too small across all node components**
-  - **Where**: All node components, sidebar, history panel
-  - **Problem**: Used fixed pixel sizes: `text-[10px]`, `text-[11px]`, `text-[12px]` — extremely small and hard to read.
   - **Fix**: Bumped to Tailwind standard sizes: `text-xs` (12px) for labels, `text-sm` (14px) for inputs/content.
 
 - [x] **Canvas dot grid hardcoded to dark color**
-  - **Where**: `components/workflow/WorkflowCanvas.tsx` line 108
-  - **Problem**: `<Background color="#27272f">` — a dark gray that's invisible on a white canvas background.
-  - **Fix**: Made it theme-aware using `useTheme()`: dark mode = `#27272f`, light mode = `#d4d4d8`.
+  - **Fix**: Made theme-aware using `useTheme()`.
 
 - [x] **MiniMap mask color hardcoded for dark**
-  - **Where**: `components/workflow/WorkflowCanvas.tsx`
-  - **Problem**: `maskColor="rgba(9,9,11,0.85)"` — an almost-black overlay that looks wrong on light backgrounds.
   - **Fix**: Light mode uses `rgba(255,255,255,0.85)`.
+
+- [x] **No delete button for run history entries**
+  - **Where**: `components/workflow/RightHistoryPanel.tsx`
+  - **Problem**: Users couldn't clean up old/failed run history.
+  - **Fix**: Added trash icon button next to each run, calls `DELETE /api/workflows/{id}/runs/{runId}` and removes from list.
 
 ---
 
 ## 🟢 Low (Minor improvements / suggestions)
 
-- [ ] **`sample-workflow.ts` is now unused**
+- [x] **`sample-workflow.ts` is now unused**
   - **Where**: `lib/sample-workflow.ts`
-  - **Problem**: After removing the pre-defined sample, this file is no longer imported anywhere. It's dead code.
-  - **Suggestion**: Delete it or repurpose it as a template gallery feature.
+  - **Fix**: Deleted the file.
 
-- [ ] **No error feedback on upload failure in nodes**
+- [x] **No error feedback on upload failure in nodes**
   - **Where**: `UploadImageNode.tsx`, `UploadVideoNode.tsx`
-  - **Problem**: `onFile()` has `throw new Error(...)` but nothing catches it — the error is silently swallowed. User sees no feedback if upload fails.
-  - **Suggestion**: Add try/catch with a local error state, display an error message below the button.
+  - **Fix**: Added try/catch with local error state. Error message shown in red below the button.
 
-- [ ] **No loading indicator during file upload**
+- [x] **No loading indicator during file upload**
   - **Where**: `UploadImageNode.tsx`, `UploadVideoNode.tsx`
-  - **Problem**: When uploading a large file (especially video), there's no visual feedback that something is happening.
-  - **Suggestion**: Add a loading spinner or progress state.
+  - **Fix**: Added `Loader2` spinner and "Uploading…" text. Button disabled while uploading.
 
 - [ ] **Workflow name not editable**
   - **Where**: `WorkflowShell.tsx`
-  - **Problem**: The workflow name is displayed as a static `<span>` in the header. Users can't rename their workflow.
   - **Suggestion**: Make it an inline-editable input that PATCHes the name on blur.
-
-- [ ] **No confirmation on delete/discard**
-  - **Where**: `WorkflowCanvas.tsx`
-  - **Problem**: Pressing Delete immediately removes selected nodes without confirmation.
-  - **Suggestion**: Add a confirmation dialog for destructive actions.
 
 - [ ] **Single workflow only**
   - **Where**: `WorkflowPageClient.tsx`
-  - **Problem**: The bootstrap always picks `workflows[0]`. There's no way to list, switch between, or create additional workflows.
   - **Suggestion**: Add a workflow list/selector in the header or sidebar.
 
 - [ ] **No auto-save**
-  - **Where**: General
-  - **Problem**: Users must manually click "Save". If they close the tab, unsaved work is lost.
   - **Suggestion**: Add debounced auto-save (e.g., 3s after last change).
