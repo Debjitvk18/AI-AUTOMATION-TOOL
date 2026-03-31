@@ -37,7 +37,7 @@ export function WebhookTriggerNode({ id, data, selected }: NodeProps) {
       <NodeShell title="Webhook Trigger" icon={<Webhook className="h-3.5 w-3.5 text-green-400" />} selected={selected} running={running}>
         <label className="block text-xs font-medium uppercase tracking-wide text-zinc-500">Webhook URL</label>
         <div className="flex items-center gap-1 mt-0.5">
-          <input readOnly value={webhookUrl}
+          <input title="text" readOnly value={webhookUrl}
             className="flex-1 rounded-lg border px-2 py-1 text-xs outline-none
               border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/80 dark:text-zinc-400" />
           <button type="button" onClick={copyUrl} title="Copy URL"

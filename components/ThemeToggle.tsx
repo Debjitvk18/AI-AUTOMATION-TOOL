@@ -14,7 +14,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <button className="rounded-lg p-2 text-zinc-400 opacity-0">
+      <button title="btn" className="rounded-lg p-2 text-zinc-400 opacity-0">
         <Moon className="h-4 w-4" />
       </button>
     );

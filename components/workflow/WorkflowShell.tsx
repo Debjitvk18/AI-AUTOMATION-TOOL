@@ -86,6 +86,7 @@ export function WorkflowShell({
           {/* Editable workflow name */}
           {editingName ? (
             <input
+              title="text" 
               ref={nameInputRef}
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
@@ -126,6 +127,7 @@ export function WorkflowShell({
           {/* Workflow selector dropdown */}
           <div className="relative" ref={dropdownRef}>
             <button
+            title="btn"
               type="button"
               onClick={() => setDropdownOpen((o) => !o)}
               className="inline-flex min-w-0 items-center gap-1 rounded-lg border px-2 py-1 text-xs transition
