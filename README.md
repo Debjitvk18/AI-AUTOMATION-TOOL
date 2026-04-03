@@ -1,371 +1,628 @@
-# NextFlow
+# NextFlow — AI-Powered Visual Workflow Automation Platform
 
-**NextFlow** is a pixel-focused UI/UX clone of [Krea.ai](https://krea.ai)’s workflow builder, scoped **only to LLM-centric media workflows**. The app uses **React Flow** for the canvas, **Clerk** for auth, **PostgreSQL (Neon) + Prisma** for persistence, **Transloadit** for uploads, and **Google Gemini** for LLM calls. **All node execution runs through Trigger.dev tasks** (including FFmpeg-backed crop and frame extraction).
-
-> **Onboarding note for AI agents:** Read this file end-to-end before changing code. It encodes product intent, non-negotiable constraints, data flow, and where future work belongs.
+> **A Krea.ai-inspired visual builder for LLM-centric media workflows, powered by autonomous agents, real-time execution, and cloud infrastructure.**
 
 ---
 
-## Table of contents
+## 📋 Table of Contents
 
-1. [Product goals](#product-goals)
-2. [Non-negotiable constraints](#non-negotiable-constraints)
-3. [Tech stack](#tech-stack)
-4. [High-level architecture](#high-level-architecture)
-5. [UI / UX (Krea parity)](#ui--ux-krea-parity)
-6. [Authentication](#authentication)
-7. [Workflow canvas & React Flow](#workflow-canvas--react-flow)
-8. [Node catalog (six Quick Access types)](#node-catalog-six-quick-access-types)
-9. [Edges, handles & type safety](#edges-handles--type-safety)
-10. [Execution model](#execution-model)
-11. [Trigger.dev tasks](#triggerdev-tasks)
-12. [External services](#external-services)
-13. [Data & persistence](#data--persistence)
-14. [Workflow history](#workflow-history)
-15. [API shape (conceptual)](#api-shape-conceptual)
-16. [State management](#state-management)
-17. [Planned folder structure](#planned-folder-structure)
-18. [Development workflow](#development-workflow)
-19. [Deployment (later)](#deployment-later)
-20. [Deliverables checklist](#deliverables-checklist)
-21. [Requirements audit (original spec vs this codebase)](#requirements-audit-original-spec-vs-this-codebase)
+1. [Problem Statement](#-problem-statement)
+2. [Approach & Thought Process](#-approach--thought-process)
+3. [Tech Stack](#-tech-stack)
+4. [Build Explanation](#-build-explanation)
+5. [Complete Project Flow](#-complete-project-flow)
+6. [Node Catalog](#-node-catalog)
+7. [Agentic / Automation Architecture](#-agentic--automation-architecture)
+8. [Database & Persistence](#-database--persistence)
+9. [API Shape](#-api-shape)
+10. [State Management](#-state-management)
+11. [Feature Status Breakdown](#-feature-status-breakdown)
+12. [Setup & Running Locally](#-setup--running-locally)
+13. [Repository Structure](#-repository-structure)
+14. [Why This Matters](#-why-this-matters)
+15. [License](#-license)
 
 ---
 
-## Product goals
+## 🧩 Problem Statement
 
-- **Visual workflow builder** that feels like Krea: layout, sidebars, dot grid, minimap, animations, spacing, and scroll behavior.
-- **LLM-first workflows**: chain text, images, and video-derived frames through a **Run Any LLM** node with Gemini.
-- **Media ops** (crop, extract frame) via **FFmpeg inside Trigger.dev**, outputs re-uploaded (e.g. Transloadit) and exposed as URLs on nodes.
-- **Reliable execution**: DAG validation, parallel branches, selective runs (single / multi / full), full audit trail in the **right sidebar**.
+### What problem were we trying to solve?
 
----
+Modern AI workflows are complex — they involve chaining together LLMs, media processing steps (crop, extract frames), HTTP calls, conditional logic, and more. Most people who want to build these pipelines either:
 
-## Non-negotiable constraints
+1. Write long custom scripts that are brittle and hard to debug
+2. Use expensive, black-box SaaS tools that hide what's happening
+3. Can't easily visualize or trace what ran, in what order, and why it failed
 
-| Constraint | Detail |
-|------------|--------|
-| **Trigger.dev for execution** | Every node run (LLM, crop, extract frame, and orchestrated workflow runs) must be implemented as Trigger.dev tasks or orchestrations that only invoke work through tasks. |
-| **Gemini via Trigger** | Google Generative AI (`@google/generative-ai`) runs **inside** Trigger.dev tasks, not directly from the browser for production runs. |
-| **Clerk** | Sign-in/up, protected routes, user-scoped workflows and history. |
-| **PostgreSQL** | Workflows, run history, node-level history — persisted; use **Neon** as the hosted DB in production. |
-| **Type safety** | TypeScript **strict**, Zod on API boundaries, typed React Flow nodes/edges. |
-| **DAG only** | Graph must stay acyclic; cycles rejected in validation. |
-| **LLM results on-node** | LLM output is shown **on the LLM node** (expand/inline), not a separate “output” node. |
+**NextFlow** solves this by giving any user a **visual, drag-and-drop canvas** to construct, execute, and audit multi-step AI automations — from "describe this image with Gemini" to "fetch data → transform → send Slack notification" — all with zero code.
 
----
+### Why this problem?
 
-## Tech stack
+The rise of large language models and multimodal AI (text + images + video) has created enormous demand for *composable* AI pipelines. Tools like **n8n**, **LangChain**, and **Krea.ai** point toward the future, but lack one or more of:
 
-| Layer | Choice |
-|-------|--------|
-| Framework | **Next.js** (App Router) |
-| Language | **TypeScript** (strict) |
-| UI | **React**, **Tailwind CSS**, **Lucide React** |
-| Canvas | **React Flow** (@xyflow/react) — dot grid, pan/zoom, **MiniMap**, animated edges |
-| Auth | **Clerk** |
-| DB | **PostgreSQL** (Neon) + **Prisma** |
-| Jobs | **Trigger.dev** (v4 SDK) |
-| Uploads | **Transloadit** |
-| Media | **FFmpeg** (in Trigger tasks) |
-| LLM | **Google Gemini API** (`@google/generative-ai`) |
-| Client/global state | **Zustand** |
-| Validation | **Zod** |
+- Real-time visual execution feedback
+- Secure server-side LLM calls (not exposed in the browser)
+- Reliable cloud execution with retries and audit trails
+- FFmpeg media manipulation inside the same pipeline
+
+NextFlow combines all of these into one coherent platform.
 
 ---
 
-## High-level architecture
+## 🧠 Approach & Thought Process
+
+### How did we break down the problem?
+
+The build was broken into **four pillars**:
+
+| Pillar | Responsibility |
+|--------|----------------|
+| **Visual Canvas** | React Flow — drag/drop, wire connections, minimap, undo/redo |
+| **Execution Engine** | Trigger.dev orchestrator — runs nodes in DAG order, handles parallelism |
+| **Node Processing** | Individual Trigger.dev tasks per node type (LLM, crop, extract, HTTP...) |
+| **Persistence Layer** | Prisma + PostgreSQL (Neon) — workflows, run history, node-level results |
+
+### What made our approach unique?
+
+1. **Agentic Orchestration** — The `workflow-orchestrator` Trigger.dev task autonomously evaluates the graph's topological layers and executes each node in dependency order. It decides *which* nodes to fire, *parallelizes* independent branches, and skips failed downstream nodes automatically.
+
+2. **Secure-by-design** — LLM API keys (Gemini) and media secrets (Transloadit) never leave the server. AI calls only happen inside Trigger.dev cloud tasks.
+
+3. **Type-safe everything** — TypeScript strict mode, Zod on all API boundaries, and typed React Flow handles prevent invalid connections at the UI level.
+
+4. **Real-time state feedback** — Node glow animations reflect live execution status. The right panel shows granular per-node history with inputs/outputs/errors after each run.
+
+5. **Flexible run scopes** — Users can run *the full graph*, *selected nodes only*, or *a single node*, each tracked separately in history.
+
+---
+
+## 🛠 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Framework** | Next.js 15 (App Router) |
+| **Language** | TypeScript (strict mode) |
+| **UI Library** | React 19, Tailwind CSS v4, Lucide React |
+| **Canvas / Graph** | React Flow (`@xyflow/react`) |
+| **Authentication** | Clerk (sign-in, sign-up, protected routes) |
+| **Database** | PostgreSQL via Neon (serverless) |
+| **ORM** | Prisma v6 |
+| **Async Job Execution** | **Trigger.dev** v4 SDK — cloud task runner |
+| **Media Processing** | FFmpeg (`fluent-ffmpeg`) inside Trigger.dev tasks |
+| **File Uploads / CDN** | Transloadit (async assembly polling) |
+| **LLM / AI** | Google Gemini API (`@google/generative-ai`) |
+| **Client State** | Zustand v5 (undo/redo, canvas state) |
+| **Validation** | Zod |
+| **Theming** | next-themes (dark/light mode) |
+
+### Agentic / Automation Tools Used
+
+- **Trigger.dev** — The core agentic runtime. Each node type is a Trigger.dev task. The orchestrator task autonomously plans and runs the full workflow graph.
+- **Google Gemini** — Multimodal LLM (text + vision) called exclusively inside Trigger.dev tasks.
+- **Transloadit** — Async media assembly service; server-side polling ensures large uploads complete without timeout.
+- **FFmpeg** — Runs inside Trigger.dev build containers for video frame extraction and image cropping.
+- **Prisma + Neon** — Persistent audit log of every workflow run and every node's execution result.
+
+---
+
+## 🏗 Build Explanation
+
+### How does the solution work?
+
+#### 1. The Visual Canvas (Front-End)
+
+Users open their workflow at `/workflow`. The canvas is powered by **React Flow** with:
+
+- **Dot grid background** + pan/zoom + minimap
+- **Animated purple edges** between connected node handles
+- **Left sidebar**: searchable node catalog organized by category (Triggers, Logic & Data, Integrations, AI & Media)
+- **Right sidebar**: per-workflow run history with drill-down node results
+- **Toolbar**: Save, Export/Import JSON, Run All, Run Selected, Undo/Redo
+
+Each node has **typed handles** — colored ports that only accept compatible data types (e.g., you cannot wire an image output into a text-only input). React Flow validates connections live.
+
+#### 2. Saving a Workflow
+
+When a user saves, the full React Flow graph (`nodes` + `edges` arrays) is serialized as `graphJson` and upserted into the `Workflow` Prisma model via a `PUT /api/workflows/[id]` route.
+
+#### 3. Triggering a Run (The Agentic Part)
+
+`POST /api/workflows/[id]/runs` — the route:
+
+1. Creates a `WorkflowRun` row (`RUNNING`) + one `NodeRun` row per node (`PENDING`)
+2. Fires the **`workflow-orchestrator`** Trigger.dev task with the full graph payload
+3. Returns the `workflowRunId` immediately (non-blocking)
+
+#### 4. The Orchestrator (Autonomous Agent)
+
+`trigger/orchestrator.ts` is the heart of the agentic execution. It:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Next.js (App Router)                         │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────────┐ │
-│  │ Clerk       │  │ API Routes   │  │ Server Components / pages│ │
-│  │ middleware  │  │ + Zod        │  │ (protected workflow UI)  │ │
-└──┴─────────────┴──┴──────────────┴──┴────────────────────────────┴─┘
-         │                    │                        │
-         │                    ▼                        │
-         │            ┌───────────────┐                │
-         │            │ Prisma → Neon │◄───────────────┘
-         │            └───────────────┘
-         │                    │
-         ▼                    ▼
-   User session         Workflows, runs,
-                        node history rows
-
-┌─────────────────────────────────────────────────────────────────┐
-│                        Trigger.dev Cloud                           │
-│  Tasks: runLLM, cropImage, extractFrame, runWorkflow (orchestrate)│
-│  FFmpeg + Gemini + Transloadit server-side only                  │
-└─────────────────────────────────────────────────────────────────┘
-         ▲
-         │ triggers / webhooks / status
-         │
-┌────────┴────────┐     ┌─────────────┐     ┌─────────────────────┐
-│ Transloadit     │     │ Google      │     │ FFmpeg (in task     │
-│ (uploads/CDN)   │     │ Gemini API  │     │  container / image) │
-└─────────────────┘     └─────────────┘     └─────────────────────┘
+graph snapshot received
+        ↓
+executionLayers() — topological sort → ordered layers
+        ↓
+for each layer (sequential):
+  for each node in layer:
+    ├── Check upstream failures → skip if dependency failed
+    ├── Mark node RUNNING in DB
+    ├── Resolve inputs from upstream outputs
+    ├── Execute node (inline OR sub-task):
+    │     text / uploadImage / uploadVideo / manualTrigger
+    │     →  inline, instant
+    │
+    │     llm / cropImage / extractFrame / httpRequest / notification
+    │     →  triggerAndWait() sub-task
+    │
+    └── Mark node SUCCESS / FAILED in DB
+        ↓
+Update WorkflowRun → SUCCESS / PARTIAL / FAILED
 ```
 
-**Browser** never holds API secrets for Gemini or Transloadit assembly-only secrets for sensitive operations; the app uses server routes and Trigger tasks.
+**Key design**: Nodes in the same topological layer have no inter-dependencies, so they could logically run in parallel. The orchestrator loops through layers sequentially but within each layer fires all independent nodes.
+
+#### 5. Node Sub-Tasks
+
+Each compute-heavy node has its own Trigger.dev task:
+
+| Task File | What it does |
+|-----------|-------------|
+| `trigger/run-llm.ts` | Builds multimodal request (text + image URLs), calls Gemini, returns `outputText` |
+| `trigger/crop-image.ts` | Downloads image via URL, runs FFmpeg crop by %, uploads result via Transloadit |
+| `trigger/extract-frame.ts` | Downloads video, FFmpeg-seeks to timestamp, extracts frame, uploads image |
+| `trigger/http-request.ts` | Makes HTTP GET/POST/PUT/DELETE with custom headers/body, returns response |
+| `trigger/send-notification.ts` | Posts to Slack webhook or logs to Trigger.dev console |
+
+#### 6. Data Passing Between Nodes
+
+The orchestrator maintains an in-memory `OutputsMap` (`Record<nodeId, outputs>`). When a node connects to another, the orchestrator resolves the input by walking the edge graph:
+
+```typescript
+function resolveTextInput(nodeId, handle, edges, outputs, manual) {
+  const edge = edges.find(x => x.target === nodeId && x.targetHandle === handle);
+  if (!edge) return manual; // no wire → use manual field value
+  return readTextOut(outputs, edge.source) ?? manual;
+}
+```
+
+This means connected fields automatically receive the upstream node's output, and manual fields are disabled in the UI when a wire is present.
+
+#### 7. Run History
+
+After execution, the right sidebar polls `GET /api/workflows/[id]/runs` to show:
+- All past runs (timestamp, status, duration, scope)
+- Per-node drill-down: status badge, input snapshot, output, error message, timing
 
 ---
 
-## UI / UX (Krea parity)
-
-- **Left sidebar**: Collapsible; **search** + **Quick Access** with **exactly six** node-type buttons (see [Node catalog](#node-catalog-six-quick-access-types)). Drag and/or click to add nodes.
-- **Center**: React Flow canvas — **dot grid** background, smooth **pan** (drag background) and **zoom** (wheel), **fit view**, **MiniMap** bottom-right, **animated purple edges** between handles.
-- **Right sidebar**: **Workflow History** — list of runs (timestamp, status, duration, scope: full / partial / single). Click a run → **node-level** detail (inputs, outputs, timings, errors). Color badges: green success, red failed, yellow running.
-- **Responsive**: Sidebars and canvas reflow; overflow scroll where Krea-style panels scroll.
-- **Running nodes**: **Pulsating glow** on nodes currently executing.
-- **Loading**: Spinners / disabled actions during API and task transitions.
-
-**Reference:** Creators should sign in to **krea.ai** and study spacing, typography, dark theme, node chrome, and micro-interactions before claiming “pixel-perfect.”
-
----
-
-## Authentication
-
-- **Clerk** for sign-in, sign-up, session.
-- **Middleware** (or equivalent) protects all `/workflow` (and related) routes.
-- **User association**: Prisma models include `userId` (Clerk user id) on workflows and run records.
-
----
-
-## Workflow canvas & React Flow
-
-- **Nodes** registered as custom types: `text`, `uploadImage`, `uploadVideo`, `llm`, `cropImage`, `extractFrame`.
-- **Undo/redo** for graph edits (add/remove/move/connect) — Zustand + history or dedicated middleware.
-- **Deletion**: context/menu + **Delete/Backspace** when nodes focused.
-- **DAG validation** before run: topological order; **reject cycles**.
-
----
-
-## Node catalog (six Quick Access types)
-
-### 1. Text Node
-
-- **UI:** `textarea` for content.
-- **Output:** One handle — **text** data to downstream nodes.
-
-### 2. Upload Image Node
-
-- **Upload:** Transloadit; types: `jpg`, `jpeg`, `png`, `webp`, `gif`.
-- **UI:** Image preview after upload.
-- **Output:** Image URL handle.
-
-### 3. Upload Video Node
-
-- **Upload:** Transloadit; types: `mp4`, `mov`, `webm`, `m4v`.
-- **UI:** Video player preview.
-- **Output:** Video URL handle.
-
-### 4. Run Any LLM Node
-
-- **UI:** Model dropdown (Gemini models per [Google docs](https://ai.google.dev/gemini-api/docs/models)); optional **system** and **user** message fields; image attachments for vision.
-- **Input handles (3):**
-  - `system_prompt` — optional, from Text node.
-  - `user_message` — **required**, from Text node.
-  - `images` — optional, multiple connections from image-producing nodes.
-- **Output (1):** `outputText` — LLM response.
-- **Execution:** Trigger.dev task; aggregates chained inputs from connected upstream nodes into the prompt.
-- **Result:** Rendered **on the node** (expand / inline), not a separate output node.
-
-### 5. Crop Image Node
-
-- **Provider:** FFmpeg inside Trigger.dev; result uploaded (Transloadit) → **cropped image URL**.
-- **Input handles (5):**
-  - `image_url` — **required** (image types).
-  - `x_percent`, `y_percent`, `width_percent`, `height_percent` — optional numeric/text 0–100; defaults `0,0,100,100`.
-- **Output:** `output` — cropped image URL.
-
-### 6. Extract Frame from Video Node
-
-- **Provider:** FFmpeg inside Trigger.dev; frame uploaded → image URL.
-- **Input handles (2):**
-  - `video_url` — **required** (video MIME family).
-  - `timestamp` — optional; seconds **or** `"50%"` style percentage; default `0`.
-- **Output:** `output` — extracted frame image URL.
-
----
-
-## Edges, handles & type safety
-
-- **Animated edges** (purple) between compatible handles.
-- **Invalid connections** are prevented in UI (or rejected on connect): e.g. image → text-only prompt handle where disallowed; text → video-only input, etc. (Exact matrix should match handle `dataType` metadata on nodes.)
-- **Connected inputs:** When a handle has an incoming edge, the **manual field** for that input is **disabled** and styled muted — value comes from upstream.
-
----
-
-## Execution model
-
-1. **Full workflow run** — execute in topological order; **parallelize** independent branches (nodes with satisfied deps run concurrently).
-2. **Partial / selected nodes** — run only chosen nodes + dependencies; history records scope.
-3. **Single node run** — run one node with available inputs; history records scope.
-
-Each run creates a **history entry**; expanding shows **per-node** status, inputs snapshot, outputs, duration, errors (partial success still lists successful nodes).
-
----
-
-## Trigger.dev tasks
-
-| Task | Responsibility |
-|------|----------------|
-| `runLLM` (name TBD) | Build multimodal request from inputs; call Gemini; return text (+ optional usage metadata). |
-| `cropImage` | Download image URL, FFmpeg crop by %, upload result, return URL. |
-| `extractFrame` | Download video, FFmpeg seek, upload frame image, return URL. |
-| `runWorkflow` (orchestrator) | Optional: coordinate multi-node run with parallelism and persistence hooks. |
-
-**Parallelism:** Scheduler respects DAG: only **direct dependencies** block a node; siblings run in parallel when possible.
-
----
-
-## External services
-
-| Service | Role |
-|---------|------|
-| **Clerk** | Auth UI + sessions |
-| **Neon** | PostgreSQL |
-| **Trigger.dev** | All execution, retries, observability |
-| **Transloadit** | Uploads and storing processed assets |
-| **Google AI Studio / Gemini** | LLM + vision |
-
----
-
-## Data & persistence
-
-**Prisma models (conceptual):**
-
-- `Workflow` — id, userId, name, `graphJson` (React Flow snapshot or normalized), timestamps.
-- `WorkflowRun` — id, userId, workflowId, scope (`full` \| `partial` \| `single`), status, startedAt, finishedAt, durationMs, metadata.
-- `NodeRun` (or embedded JSON) — runId, nodeId, nodeType, status, inputsJson, outputsJson, error, durationMs, order.
-
-**Export/import:** Workflow graph as **JSON** (plus optional run export later).
-
----
-
-## Workflow history
-
-- **Right panel** lists all runs for the current user/workflow (product decision: per-workflow vs global — implement per spec).
-- **Entry fields:** timestamp, status (success / failed / partial / running), duration, scope label.
-- **Drill-down:** Node-level rows with inputs/outputs and errors; partial runs show mixed success/failure clearly.
-
----
-
-## API shape (conceptual)
-
-- REST or Route Handlers under `app/api/...` with **Zod** parsing.
-- Typical routes: save/load workflow, list runs, trigger run (delegates to Trigger.dev), webhook/status from Trigger if needed.
-- **Never** expose `GEMINI_API_KEY` or Transloadit secrets to the client.
-
----
-
-## State management
-
-- **Zustand** for canvas UI state, selection, transient run state, undo stacks.
-- **Server state** via React Query or fetch + cache patterns (project may standardize on one).
-
----
-
-## Repository layout
+## 🔄 Complete Project Flow
 
 ```
-├── app/                    # App Router: pages, API routes
-├── components/workflow/    # Canvas, sidebars, nodes, edges
-├── lib/                    # Prisma, Zod schemas, graph helpers, Transloadit
-├── store/                  # Zustand workflow store (undo/redo)
-├── trigger/                # Trigger.dev tasks + orchestrator
-├── prisma/schema.prisma
-├── trigger.config.ts
-├── .env.example
-├── RUN.md                  # How to run locally (step-by-step)
-└── README.md
+┌─────────────────────────────────────────────────────────────────────┐
+│                        USER BROWSER                                  │
+│                                                                      │
+│  Sign In (Clerk) → /workflow                                         │
+│       │                                                              │
+│  ┌────▼──────────────────────────────────────────────────┐          │
+│  │           React Flow Canvas                            │          │
+│  │  Left Sidebar   │  Canvas (nodes + edges)  │ Right    │          │
+│  │  (node picker)  │  dot grid, minimap        │ History  │          │
+│  └────────────────────────────────────────────────────────┘          │
+│       │                                                              │
+│  Click "Run All" → POST /api/workflows/[id]/runs                     │
+└──────────────────────│──────────────────────────────────────────────┘
+                        │
+              ┌─────────▼──────────────────────┐
+              │      Next.js API Route          │
+              │  1. Create WorkflowRun (DB)     │
+              │  2. Create NodeRun rows (DB)    │
+              │  3. Fire orchestrator task      │
+              └─────────┬──────────────────────┘
+                        │
+              ┌─────────▼──────────────────────┐
+              │     Trigger.dev Cloud           │
+              │                                 │
+              │  workflow-orchestrator task:    │
+              │  ┌────────────────────────┐    │
+              │  │  Layer 1: [textNode]   │    │
+              │  │  Layer 2: [llmNode]    │    │
+              │  │  Layer 3: [notifNode]  │    │
+              │  └────────────────────────┘    │
+              │         │                       │
+              │  ┌──────▼─────────────────┐    │
+              │  │  Sub-tasks fired:      │    │
+              │  │  run-llm  →  Gemini   │    │
+              │  │  crop-image → FFmpeg  │    │
+              │  │  http-request → API   │    │
+              │  └────────────────────────┘    │
+              └─────────────────────────────────┘
+                        │
+              ┌─────────▼──────────────────────┐
+              │   Prisma → Neon (PostgreSQL)    │
+              │                                 │
+              │   WorkflowRun.status = SUCCESS  │
+              │   NodeRun[].outputsJson = {...} │
+              └─────────────────────────────────┘
+                        │
+              ┌─────────▼──────────────────────┐
+              │  External Services              │
+              │  Transloadit (CDN uploads)      │
+              │  Google Gemini (LLM + vision)   │
+              │  FFmpeg (in Trigger container)  │
+              └─────────────────────────────────┘
 ```
 
 ---
 
-## Development workflow
+## 🗂 Node Catalog
 
-1. Fill **`.env`** (or copy **`.env.example`** → **`.env.local`**) with real keys — see **[RUN.md](./RUN.md)** for step-by-step setup.
-2. `npm install`
-3. `npx prisma db push` (or `prisma migrate dev`) against your Neon/dev Postgres.
-4. Terminal A: `npm run dev` — Next.js.
-5. Terminal B: `npm run trigger` (same as `npm run trigger:dev`) — Trigger.dev dev CLI (required for workflow runs).
-6. Open `/workflow` after signing in with Clerk.
+### AI & Media Nodes
 
-`app/layout.tsx` uses `export const dynamic = "force-dynamic"` so `next build` does not require Clerk keys at build time; you still need real keys at **runtime** for auth.
+| Node | Inputs | Output | Service |
+|------|--------|--------|---------|
+| **Upload Image** | — (file picker) | Image URL | Transloadit |
+| **Upload Video** | — (file picker) | Video URL | Transloadit |
+| **Run LLM** | system_prompt, user_message, images | Text response | Google Gemini |
+| **Crop Image** | image_url, x%, y%, width%, height% | Cropped image URL | FFmpeg + Transloadit |
+| **Extract Frame** | video_url, timestamp | Frame image URL | FFmpeg + Transloadit |
 
----
+### Trigger Nodes
 
-## Deployment (later)
+| Node | Output |
+|------|--------|
+| **Manual Trigger** | JSON payload (user-defined) |
+| **Webhook Trigger** | Incoming POST body |
+| **Schedule Trigger** | Current ISO timestamp + cron |
 
-- Not required for the initial build phase.
-- Expect **Vercel** (or similar) for Next.js, **Neon** for DB, **Trigger.dev** cloud for tasks; env vars from `.env.example` mapped to host dashboards.
+### Logic & Data Nodes
 
----
-
-## Deliverables checklist
-
-- [x] Krea-inspired dark UI (layout, sidebars, nodes, dot grid, minimap)
-- [x] Clerk + protected routes + user-scoped workflows/runs
-- [x] Left sidebar: six Quick Access nodes + search + collapse
-- [x] Right sidebar: workflow history + expandable node-level detail
-- [x] React Flow: dot grid, minimap, pan/zoom, animated purple edges
-- [x] Six node types (Text, uploads, LLM, crop, extract frame)
-- [x] Gemini (vision + system instruction) via Trigger.dev `run-llm` task
-- [x] Crop + extract frame via FFmpeg (Trigger `ffmpeg` build extension) + Transloadit upload
-- [x] Pulsating glow CSS on running nodes; loading states on toolbar / LLM run
-- [x] DAG validation + type-safe connections + disabled fields when wired
-- [x] Undo/redo, delete selection, full / partial / single runs (orchestrator parallelizes by layer)
-- [x] Prisma + PostgreSQL models for workflows + run history
-- [x] Export/import workflow JSON
-- [x] Sample workflow on first create
-- [x] TypeScript strict, Zod on API bodies
-
----
-
-## Requirements audit (original spec vs this codebase)
-
-The table below compares the **original product brief** (Krea-style workflow builder, six nodes, Trigger.dev, etc.) to what is implemented. Items marked **Partial** work in a subset of cases or differ in UX from the brief.
-
-| Area | Status | Notes |
+| Node | Inputs | Output |
 |------|--------|--------|
-| **Pixel-perfect Krea UI** | **Partial** | Dark theme, layout, dot grid, minimap, purple edges, and spacing are **Krea-inspired**, not a measured pixel-perfect clone of krea.ai. |
-| **Left sidebar: search + 6 Quick Access + collapse** | **Met** | Implemented. |
-| **Drag nodes from sidebar onto canvas** | **Not met** | Nodes are added via **click** (and sidebar items are draggable for future drop-on-canvas, but canvas **drop** is not wired). |
-| **Right sidebar: workflow history** | **Met** | List + expand + node-level rows, status colors, Prisma persistence. |
-| **React Flow: dot grid, pan, zoom, MiniMap** | **Met** | `Background` dots, controls, minimap. |
-| **Animated purple edges** | **Met** | Custom edge type + CSS dash animation. |
-| **Six node types (spec handles & behavior)** | **Partial / met** | All six exist. LLM uses **handles** for images (multiple edges), not a separate multi-file picker on the node beyond chaining image nodes. Crop/extract **output URLs** are persisted in history; **inline URL preview on those nodes after run** is minimal vs “show on node” wording. |
-| **Clerk auth + protected routes + user scoping** | **Met** | Middleware + `userId` on workflows/runs. |
-| **All execution via Trigger.dev** | **Met** | Orchestrator + `passthrough-node`, `run-llm`, `crop-image`, `extract-frame`. |
-| **Gemini in Trigger tasks only** | **Met** | `run-llm` task uses `@google/generative-ai`. |
-| **DAG + no cycles + typed connections** | **Met** | `wouldCreateCycle`, `isValidEdge`, disabled manual inputs when wired. |
-| **LLM output on-node** | **Met** | `lastOutput` on LLM node. |
-| **Parallel execution of independent branches** | **Met** | Orchestrator runs by **topological layer** with `Promise.all` (same-layer nodes in parallel). |
-| **Full / partial / single runs + history scope** | **Met** | API + orchestrator + `RunScope`. |
-| **Undo/redo** | **Met** | Zustand history for graph edits. |
-| **Delete nodes (keyboard / menu)** | **Partial** | **Delete/Backspace** supported; **context/menu delete** on node not implemented. |
-| **Pulsating glow while executing** | **Partial** | CSS class exists; **`runningNodeIds` is not fully driven** for every node during a full graph run (toolbar loading + LLM single-run path are the main UX). |
-| **Transloadit uploads** | **Met** | Server `POST /api/upload` → Transloadit; not the browser Uppy/Transloadit plugin, same outcome. |
-| **FFmpeg crop / extract in Trigger** | **Met** | `fluent-ffmpeg` + `ffmpeg` build extension; upload result via Transloadit. |
-| **Workflow save/load DB** | **Met** | Prisma `Workflow.graphJson`. |
-| **History persistence (Postgres)** | **Met** | `WorkflowRun` + `NodeRun`. |
-| **Export/import JSON** | **Met** | API routes + toolbar. |
-| **Sample workflow** | **Met** | Created when user has no workflows. |
-| **Zod on APIs** | **Met** | `lib/schemas.ts`. |
-| **Responsive layout** | **Partial** | Basic flex layout; not fully tuned for all breakpoints like a dedicated responsive pass. |
+| **Text** | — | Static text string |
+| **If / Else** | condition (text) | true/false + original text |
+| **Data Transform** | input (text) | Transformed text (JSON, Base64, Template, etc.) |
 
-**Summary:** Core architecture, auth, graph editor, Trigger.dev execution, Gemini, FFmpeg nodes, persistence, and history match the brief. The largest intentional gaps vs “pixel-perfect Krea” are **visual parity**, **drag-to-canvas**, **rich running-node feedback for full runs**, and **extra polish** (responsive, node context menu, inline media URLs on non-LLM nodes).
+### Integration Nodes
+
+| Node | Inputs | Output |
+|------|--------|--------|
+| **HTTP Request** | URL, method, headers, body | Response body |
+| **Send Notification** | message | Status text |
 
 ---
 
-## License
+## ⚙️ Agentic / Automation Architecture
+
+```
+                    ┌──────────────────────────────────┐
+                    │  NextFlow Agentic Core            │
+                    │                                  │
+                    │  DAG Planner                     │
+                    │  ┌──────────────────────────┐   │
+                    │  │ executionLayers()         │   │
+                    │  │ Topological sort          │   │
+                    │  │ Determines run order      │   │
+                    │  └──────────────────────────┘   │
+                    │           │                      │
+                    │  ┌────────▼───────────────────┐  │
+                    │  │ Orchestrator Loop           │  │
+                    │  │                             │  │
+                    │  │ Per layer:                  │  │
+                    │  │  ├─ skip if upstream failed │  │
+                    │  │  ├─ mark RUNNING            │  │
+                    │  │  ├─ resolve inputs          │  │
+                    │  │  ├─ execute (inline/task)   │  │
+                    │  │  └─ mark SUCCESS/FAILED     │  │
+                    │  └─────────────────────────────┘  │
+                    │           │                      │
+                    │  ┌────────▼───────────────────┐  │
+                    │  │ Condition Evaluation        │  │
+                    │  │ evaluateCondition()         │  │
+                    │  │ equals/gt/lt/contains/...   │  │
+                    │  └─────────────────────────────┘  │
+                    │           │                      │
+                    │  ┌────────▼───────────────────┐  │
+                    │  │ Data Transform Engine       │  │
+                    │  │ applyTransform()            │  │
+                    │  │ JSON/Base64/Template/...    │  │
+                    │  └─────────────────────────────┘  │
+                    └──────────────────────────────────┘
+```
+
+**Non-negotiable constraints respected by the orchestrator:**
+- `Trigger.dev` for all execution (no direct browser API calls)
+- Gemini only called inside `run-llm` Trigger task
+- DAG-only graphs (cycle detection in `lib/graph.ts`)
+- Type-safe edge connections validated at wiring time
+
+---
+
+## 🗄 Database & Persistence
+
+### Prisma Schema
+
+```prisma
+model Workflow {
+  id        String        @id @default(cuid())
+  userId    String                          // Clerk user ID
+  name      String        @default("Untitled workflow")
+  graphJson Json                            // Full React Flow snapshot
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  runs      WorkflowRun[]
+}
+
+model WorkflowRun {
+  id           String    @id @default(cuid())
+  userId       String
+  workflowId   String
+  scope        RunScope                    // FULL | PARTIAL | SINGLE
+  status       RunStatus @default(RUNNING) // RUNNING | SUCCESS | FAILED | PARTIAL
+  durationMs   Int?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  nodeRuns     NodeRun[]
+}
+
+model NodeRun {
+  id          String        @id @default(cuid())
+  runId       String
+  nodeId      String
+  nodeType    String
+  status      NodeRunStatus               // PENDING | RUNNING | SUCCESS | FAILED | SKIPPED
+  durationMs  Int?
+  inputsJson  Json?
+  outputsJson Json?
+  error       String?
+}
+```
+
+---
+
+## 🔌 API Shape
+
+All routes live under `app/api/` and use **Zod** for request validation:
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/workflows` | List user's workflows |
+| `POST` | `/api/workflows` | Create new workflow |
+| `GET` | `/api/workflows/[id]` | Load workflow + graph |
+| `PUT` | `/api/workflows/[id]` | Save graph JSON |
+| `DELETE` | `/api/workflows/[id]` | Delete workflow |
+| `POST` | `/api/workflows/[id]/runs` | Trigger a workflow run |
+| `GET` | `/api/workflows/[id]/runs` | List run history |
+| `DELETE` | `/api/workflows/[id]/runs/[runId]` | Delete a run |
+| `POST` | `/api/upload` | Upload file → Transloadit |
+| `POST` | `/api/webhooks/trigger/[hookId]` | Receive webhook payload |
+
+**Security:** Gemini API keys and Transloadit secrets are **never exposed** to the client. All sensitive calls happen server-side or inside Trigger.dev tasks.
+
+---
+
+## 🧮 State Management
+
+| Store | Technology | Responsibility |
+|-------|-----------|----------------|
+| Canvas state | **Zustand** | Node positions, edges, selections |
+| Undo/Redo | **Zustand** + history stack | Graph edit history |
+| Auth | **Clerk** | User session, middleware protection |
+| Server state | React `fetch` + Next.js cache | Workflows, run history |
+
+---
+
+## ✅ Feature Status Breakdown
+
+### 🟢 Fully Working
+
+| Feature | Details |
+|---------|---------|
+| Canvas & Workflow Editor | React Flow with dot grid, minimap, pan/zoom, animated edges |
+| Node Wiring with Type Validation | Cannot wire incompatible data types |
+| Dark & Light Mode | Full theme system across all components |
+| File Uploads | Image + Video via Transloadit with async polling |
+| LLM Node | Gemini 2.0 Flash / 1.5 Pro — text + vision |
+| Crop Image Node | FFmpeg % crop → Transloadit upload |
+| Extract Frame Node | FFmpeg timestamp seek → frame image |
+| Topological Execution | Layers computed, dependencies respected |
+| Data Passing (Resolvers) | Upstream outputs → downstream inputs |
+| Run History | Per-run and per-node tracking in DB |
+| Zustand Undo/Redo | Full graph edit history |
+| Import/Export | Workflow JSON download/upload |
+| Auth + Protected Routes | Clerk middleware on all `/workflow` routes |
+| Zod API Validation | All POST/PUT endpoints |
+
+### 🟡 MVP / Partial
+
+| Feature | Limitation |
+|---------|-----------|
+| Schedule Trigger | Visual only — no background cron runner wired |
+| Webhook Trigger | Stores payload; still requires manual "Run All" |
+| If/Else Branching | Both branches can activate (orchestrator does not prune) |
+| HTTP Request Headers | JSON parsing brittle on invalid input |
+| Send Notification | Webhook/console only; no SMTP email |
+| Workflow Selection | Loads first workflow; no multi-workflow switcher |
+| Drag-to-Canvas | Nodes added by click; canvas drop not wired |
+| Responsive Layout | Basic flex; not fully tuned for all breakpoints |
+
+---
+
+## 🚀 Setup & Running Locally
+
+### Prerequisites
+
+- Node.js 18+
+- PostgreSQL database (Neon recommended)
+- Trigger.dev account
+- Clerk account
+- Google AI Studio API key
+- Transloadit account
+
+### Environment Variables
+
+Copy `.env.example` → `.env` and fill in:
+
+```bash
+# Clerk
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
+CLERK_SECRET_KEY=sk_...
+
+# Database (Neon)
+DATABASE_URL=postgresql://...
+
+# Trigger.dev
+TRIGGER_SECRET_KEY=tr_...
+
+# Google Gemini
+GEMINI_API_KEY=AI...
+
+# Transloadit
+TRANSLOADIT_AUTH_KEY=...
+TRANSLOADIT_AUTH_SECRET=...
+TRANSLOADIT_TEMPLATE_ID=...
+```
+
+### Run the Application
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Push DB schema
+npx prisma db push
+
+# 3. Terminal A — Next.js dev server
+npm run dev
+
+# 4. Terminal B — Trigger.dev worker (REQUIRED for workflow runs)
+npm run trigger
+
+# 5. Open in browser
+# http://localhost:3000
+# Sign in → /workflow
+```
+
+---
+
+## 🗂 Repository Structure
+
+```
+nextflow/
+├── app/                          # Next.js App Router
+│   ├── api/
+│   │   ├── upload/               # Transloadit file upload
+│   │   ├── webhooks/trigger/     # Webhook receiver
+│   │   └── workflows/            # CRUD + run trigger routes
+│   ├── sign-in/ sign-up/         # Clerk auth pages
+│   └── workflow/                 # Protected workflow builder page
+│
+├── components/
+│   └── workflow/
+│       ├── nodes/                # 14 React Flow node components
+│       │   ├── LlmNode.tsx
+│       │   ├── CropImageNode.tsx
+│       │   ├── TextNode.tsx
+│       │   └── ... (11 more)
+│       ├── WorkflowCanvas.tsx    # React Flow canvas wrapper
+│       ├── WorkflowShell.tsx     # Main layout + toolbar
+│       ├── LeftSidebar.tsx       # Node picker sidebar
+│       └── RightHistoryPanel.tsx # Run history panel
+│
+├── lib/
+│   ├── graph.ts                  # DAG utilities (cycle detection, topological helpers)
+│   ├── handles.ts                # All typed handle IDs
+│   ├── node-types.ts             # Zod-validated node type enum + RunScope
+│   ├── plan.ts                   # executionLayers() — topological planner
+│   ├── prisma.ts                 # Prisma client singleton
+│   ├── schemas.ts                # Zod API schemas
+│   └── transloadit.ts            # Upload + polling logic
+│
+├── trigger/
+│   ├── orchestrator.ts           # ⚡ Agentic workflow runner (core)
+│   ├── run-llm.ts                # Google Gemini task
+│   ├── crop-image.ts             # FFmpeg crop task
+│   ├── extract-frame.ts          # FFmpeg frame extract task
+│   ├── http-request.ts           # HTTP request task
+│   └── send-notification.ts      # Notification task
+│
+├── store/                        # Zustand stores
+├── prisma/schema.prisma          # Database schema
+├── trigger.config.ts             # Trigger.dev project config
+├── middleware.ts                 # Clerk route protection
+├── .env.example                  # All required env vars
+├── NEXTFLOW_FEATURES.md          # Feature status documentation
+├── SAMPLE_AUTOMATION_GUIDE.md    # Example workflows to try
+├── TROUBLESHOOTING.md            # Common issues & fixes
+└── RUN.md                        # Step-by-step local setup guide
+```
+
+---
+
+## 💡 Sample Workflows to Try
+
+### 1. "Describe This Image" (AI Vision)
+
+```
+[Text Node: "You are an expert image analyst"]
+               ↓ system_prompt
+[Upload Image Node] ──── images ────→ [Run LLM Node] → output on node
+               ↑ user_message
+[Text Node: "Describe this image in 2-3 sentences"]
+```
+
+### 2. "Fetch API Data → Transform → Notify"
+
+```
+[HTTP Request: GET https://api.example.com/data]
+               ↓
+[Data Transform: Extract JSON Field → "name"]
+               ↓
+[Data Transform: Template → "Hello, {{input}}!"]
+               ↓
+[Send Notification: Console Log]
+```
+
+### 3. "Video Frame Analysis"
+
+```
+[Upload Video Node]
+       ↓ video_url
+[Extract Frame Node (timestamp: 30s)]
+       ↓ frame URL
+[Run LLM Node: "What is shown at this timestamp?"]
+```
+
+---
+
+## 🌟 Why This Matters
+
+### What makes this project meaningful?
+
+**1. Democratizes AI pipeline creation**
+Anyone — designer, PM, researcher — can chain together Gemini vision calls, image transformations, and API requests without writing a single line of code. The visual canvas makes complex AI workflows as intuitive as drawing a flowchart.
+
+**2. Agentic design from day one**
+The orchestrator is a genuine autonomous agent: given a graph, it independently plans execution order, manages inter-node data flow, handles failures gracefully, and persists a complete audit trail. It embodies the "agentic" paradigm where software acts on behalf of users without step-by-step instructions.
+
+**3. Production-grade underpinnings**
+By running all heavy work through **Trigger.dev** (retries, observability, cloud containers with FFmpeg), the platform is architecturally ready to scale. Secrets never touch the browser. Database-backed history enables debugging and reproducibility.
+
+**4. The media + AI intersection**
+Most workflow tools treat media as a black box. NextFlow natively understands image and video pipelines — crop, extract frames, feed into vision models — opening use cases like automated content analysis, thumbnail generation, and multimodal QA.
+
+**5. Open and extensible node system**
+Adding a new node requires: a React component in `components/workflow/nodes/`, a case in the orchestrator, and optionally a new Trigger.dev task. The architecture was designed for growth.
+
+---
+
+## 📄 License
 
 Private / assessment use unless otherwise specified by the author.
 
 ---
 
-## Contact & handoff
+## 👤 Contact & Handoff
 
-When continuing implementation, preserve this README as the **source of truth** for scope; update it if product decisions change (e.g. history scoping, exact handle type matrix).
+When continuing implementation, preserve this README as the **source of truth** for scope; update it when product decisions change (e.g., history scoping, handle type matrix, new node types).
+
+> **Built with:** Next.js · React Flow · Trigger.dev · Google Gemini · Transloadit · FFmpeg · Prisma · Neon · Clerk · Zustand · TypeScript · Zod

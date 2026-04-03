@@ -3,7 +3,7 @@
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { Loader2, Sparkles } from "lucide-react";
 import { useState } from "react";
-import { GEMINI_MODEL_OPTIONS } from "@/lib/constants";
+import { LLM_PROVIDERS, LLM_MODELS } from "@/lib/constants";
 import { HANDLE } from "@/lib/handles";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { NodeShell } from "./NodeShell";
@@ -18,11 +18,16 @@ export function LlmNode({ id, data, selected }: NodeProps) {
   const [err, setErr] = useState<string | null>(null);
 
   const d = data as {
+    provider?: string;
+    apiKey?: string;
     model?: string;
     systemPrompt?: string;
     userMessage?: string;
     lastOutput?: string;
   };
+
+  const provider = (d.provider ?? "gemini") as keyof typeof LLM_MODELS;
+  const availableModels = LLM_MODELS[provider] || LLM_MODELS.gemini;
 
   const sysConnected = edges.some((e) => e.target === id && e.targetHandle === HANDLE.systemPrompt);
   const userConnected = edges.some((e) => e.target === id && e.targetHandle === HANDLE.userMessage);
@@ -30,6 +35,10 @@ export function LlmNode({ id, data, selected }: NodeProps) {
   async function runSingle() {
     if (!workflowId) {
       setErr("Save workflow first");
+      return;
+    }
+    if (!String(d.apiKey ?? "").trim()) {
+      setErr("Gemini API key is required");
       return;
     }
     setBusy(true);
@@ -105,15 +114,48 @@ export function LlmNode({ id, data, selected }: NodeProps) {
         running={running}
       >
         <label className="block text-xs font-medium uppercase tracking-wide text-zinc-500">
+          Provider
+        </label>
+        <select
+          title="LLM Provider"
+          value={provider}
+          onChange={(e) => {
+            const newProvider = e.target.value as keyof typeof LLM_MODELS;
+            const firstModel = LLM_MODELS[newProvider]?.[0]?.id || "";
+            update(id, { provider: newProvider, model: firstModel });
+          }}
+          className={inputClasses}
+        >
+          {LLM_PROVIDERS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+
+        <label className="mt-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+          API Key
+        </label>
+        <input
+          type="password"
+          value={d.apiKey ?? ""}
+          onChange={(e) => update(id, { apiKey: e.target.value })}
+          placeholder={`Enter your ${LLM_PROVIDERS.find(p => p.id === provider)?.label || 'API'} key`}
+          className={inputClasses}
+          autoComplete="off"
+          spellCheck={false}
+        />
+
+        <label className="mt-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
           Model
         </label>
         <select
           title="Model"
-          value={d.model ?? "gemini-2.0-flash"}
+          value={d.model ?? availableModels[0]?.id}
           onChange={(e) => update(id, { model: e.target.value })}
           className={inputClasses}
         >
-          {GEMINI_MODEL_OPTIONS.map((m) => (
+          {availableModels.map((m) => (
             <option key={m.id} value={m.id}>
               {m.label}
             </option>

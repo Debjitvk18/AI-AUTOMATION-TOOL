@@ -51,7 +51,9 @@ function defaultData(type: string): Record<string, unknown> {
       return { url: "" };
     case "llm":
       return {
-        model: "gemini-2.0-flash",
+        provider: "gemini",
+        apiKey: "",
+        model: "gemini-2.0-flash-exp",
         systemPrompt: "",
         userMessage: "",
         lastOutput: "",

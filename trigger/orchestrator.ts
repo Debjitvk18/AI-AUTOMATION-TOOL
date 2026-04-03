@@ -286,17 +286,20 @@ export const workflowOrchestratorTask = task({
           // =============================================
 
           } else if (nodeType === "llm") {
-            const model = String(data.model ?? "gemini-2.0-flash");
+            const provider = String(data.provider ?? "gemini");
+            const apiKey = String(data.apiKey ?? "").trim();
+            if (!apiKey) throw new Error("LLM node requires an API key");
+            const model = String(data.model ?? "gemini-2.0-flash-exp");
             const systemPrompt = resolveTextInput(nodeId, HANDLE.systemPrompt, edges, outputs, String(data.systemPrompt ?? ""));
             const userMessage = resolveTextInput(nodeId, HANDLE.userMessage, edges, outputs, String(data.userMessage ?? ""));
             if (!userMessage.trim()) throw new Error("User message is required");
 
             const imageEdges = edges.filter((e) => e.target === nodeId && e.targetHandle === HANDLE.images);
             const imageUrls = imageEdges.map((e) => readImageUrl(outputs, e.source)).filter((u): u is string => typeof u === "string");
-            console.log(`[orchestrator]   … llm: model=${model}, msg=${userMessage.length}ch, imgs=${imageUrls.length}`);
+            console.log(`[orchestrator]   … llm: provider=${provider}, model=${model}, msg=${userMessage.length}ch, imgs=${imageUrls.length}`);
 
             const run = await runLlmTask.triggerAndWait({
-              workflowRunId, nodeId, userId, model,
+              workflowRunId, nodeId, userId, provider, apiKey, model,
               systemPrompt: systemPrompt.trim() || undefined,
               userMessage: userMessage.trim(),
               imageUrls,
