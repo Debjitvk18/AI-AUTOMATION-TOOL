@@ -79,7 +79,7 @@ export function LeftSidebar() {
   return (
     <aside
       className={cn(
-        "flex h-full shrink-0 flex-col border-r bg-[var(--nf-panel)] transition-[width]",
+        "flex h-full shrink-0 flex-col border-r bg-(--nf-panel) transition-[width]",
         "border-zinc-200 dark:border-zinc-800/80",
         collapsed ? "w-14" : "w-64",
       )}
@@ -146,10 +146,24 @@ export function LeftSidebar() {
               key={item.type}
               type="button"
               title={item.label}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData("application/reactflow", item.type);
+                e.dataTransfer.effectAllowed = "move";
+              }}
               onClick={() => addNode(item.type)}
-              className="rounded-lg p-2 text-violet-500 transition hover:bg-zinc-100 dark:text-violet-400 dark:hover:bg-zinc-900"
+              className="group relative rounded-lg p-2 text-violet-500 transition hover:bg-zinc-100 dark:text-violet-400 dark:hover:bg-zinc-900"
             >
               {item.icon}
+              <span
+                className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-20 -translate-y-1/2
+                  whitespace-nowrap rounded-md border px-2 py-1 text-[11px] font-medium opacity-0 shadow-sm
+                  transition-opacity duration-150 group-hover:opacity-100
+                  border-zinc-200 bg-white text-zinc-700
+                  dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-200"
+              >
+                {item.label}
+              </span>
             </button>
           ))}
         </div>

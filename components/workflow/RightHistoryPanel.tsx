@@ -1,7 +1,7 @@
 "use client";
 
 import type { NodeRun, RunScope, RunStatus, WorkflowRun } from "@prisma/client";
-import { ChevronRight, History, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, History, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 
@@ -45,6 +45,7 @@ export function RightHistoryPanel({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const fetchRuns = useCallback(async (showLoading = true) => {
     if (!workflowId) return;
@@ -94,15 +95,37 @@ export function RightHistoryPanel({
   }, [workflowId, expanded]);
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-l bg-(--nf-panel)
-      border-zinc-200 dark:border-zinc-800/80">
+    <aside
+      className={cn(
+        "flex h-full shrink-0 flex-col border-l bg-(--nf-panel) transition-[width]",
+        "border-zinc-200 dark:border-zinc-800/80",
+        collapsed ? "w-12" : "w-80",
+      )}
+    >
       <div className="flex items-center gap-2 border-b px-3 py-2
         border-zinc-200 dark:border-zinc-800/80">
         <History className="h-4 w-4 text-violet-500 dark:text-violet-400" />
-        <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          Workflow history
-        </span>
+        {!collapsed ? (
+          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            Workflow history
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className="ml-auto rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700
+            dark:text-zinc-500 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
+          aria-label={collapsed ? "Expand history sidebar" : "Collapse history sidebar"}
+          title={collapsed ? "Expand" : "Collapse"}
+        >
+          {collapsed ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
       </div>
+      {collapsed ? (
+        <div className="flex flex-1 items-center justify-center p-1 text-[10px] text-zinc-500 dark:text-zinc-500 [writing-mode:vertical-rl]">
+          History
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto p-2">
         {!workflowId ? (
           <p className="px-2 text-xs text-zinc-400 dark:text-zinc-600">Save workflow to record runs.</p>
@@ -203,6 +226,7 @@ export function RightHistoryPanel({
           </ul>
         )}
       </div>
+      )}
     </aside>
   );
 }
