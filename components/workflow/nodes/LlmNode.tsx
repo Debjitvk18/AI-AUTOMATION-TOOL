@@ -37,10 +37,7 @@ export function LlmNode({ id, data, selected }: NodeProps) {
       setErr("Save workflow first");
       return;
     }
-    if (!String(d.apiKey ?? "").trim()) {
-      setErr("Gemini API key is required");
-      return;
-    }
+
     setBusy(true);
     setErr(null);
     try {
@@ -69,6 +66,8 @@ export function LlmNode({ id, data, selected }: NodeProps) {
             update(id, { lastOutput: out.outputText ?? "" });
           } else if (nr?.error) {
             setErr(nr.error);
+          } else {
+            setErr("Run completed without output");
           }
           break;
         }
@@ -140,7 +139,7 @@ export function LlmNode({ id, data, selected }: NodeProps) {
           type="password"
           value={d.apiKey ?? ""}
           onChange={(e) => update(id, { apiKey: e.target.value })}
-          placeholder={`Enter your ${LLM_PROVIDERS.find(p => p.id === provider)?.label || 'API'} key`}
+          placeholder={`Optional: ${LLM_PROVIDERS.find((p) => p.id === provider)?.label || "Provider"} key (falls back to server env key)`}
           className={inputClasses}
           autoComplete="off"
           spellCheck={false}

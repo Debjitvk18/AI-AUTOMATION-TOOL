@@ -53,7 +53,7 @@ function defaultData(type: string): Record<string, unknown> {
       return {
         provider: "gemini",
         apiKey: "",
-        model: "gemini-2.0-flash-exp",
+        model: "gemini-2.5-flash",
         systemPrompt: "",
         userMessage: "",
         lastOutput: "",

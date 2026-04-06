@@ -288,8 +288,7 @@ export const workflowOrchestratorTask = task({
           } else if (nodeType === "llm") {
             const provider = String(data.provider ?? "gemini");
             const apiKey = String(data.apiKey ?? "").trim();
-            if (!apiKey) throw new Error("LLM node requires an API key");
-            const model = String(data.model ?? "gemini-2.0-flash-exp");
+            const model = String(data.model ?? "gemini-2.5-flash");
             const systemPrompt = resolveTextInput(nodeId, HANDLE.systemPrompt, edges, outputs, String(data.systemPrompt ?? ""));
             const userMessage = resolveTextInput(nodeId, HANDLE.userMessage, edges, outputs, String(data.userMessage ?? ""));
             if (!userMessage.trim()) throw new Error("User message is required");

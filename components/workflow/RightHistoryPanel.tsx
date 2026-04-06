@@ -46,21 +46,33 @@ export function RightHistoryPanel({
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const fetchRuns = useCallback(async () => {
+  const fetchRuns = useCallback(async (showLoading = true) => {
     if (!workflowId) return;
-    setLoading(true);
+    if (showLoading) setLoading(true);
     try {
       const res = await fetch(`/api/workflows/${workflowId}/runs`);
       const j = await res.json();
       if (res.ok) setRuns(j.runs as RunWithNodes[]);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [workflowId]);
 
   useEffect(() => {
-    void fetchRuns();
+    void fetchRuns(true);
   }, [fetchRuns, refreshKey]);
+
+  useEffect(() => {
+    if (!workflowId) return;
+    const hasRunning = runs.some((r) => r.status === "RUNNING");
+    if (!hasRunning) return;
+
+    const id = window.setInterval(() => {
+      void fetchRuns(false);
+    }, 2000);
+
+    return () => window.clearInterval(id);
+  }, [workflowId, runs, fetchRuns]);
 
   const deleteRun = useCallback(async (runId: string) => {
     if (!workflowId) return;
@@ -82,7 +94,7 @@ export function RightHistoryPanel({
   }, [workflowId, expanded]);
 
   return (
-    <aside className="flex h-full w-80 shrink-0 flex-col border-l bg-[var(--nf-panel)]
+    <aside className="flex h-full w-80 shrink-0 flex-col border-l bg-(--nf-panel)
       border-zinc-200 dark:border-zinc-800/80">
       <div className="flex items-center gap-2 border-b px-3 py-2
         border-zinc-200 dark:border-zinc-800/80">

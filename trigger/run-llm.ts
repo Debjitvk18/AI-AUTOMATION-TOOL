@@ -13,6 +13,52 @@ export type RunLlmPayload = {
   imageUrls: string[];
 };
 
+async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = 45000): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function nonEmpty(v: string | undefined | null): string | undefined {
+  const s = String(v ?? "").trim();
+  return s ? s : undefined;
+}
+
+function providerApiKey(provider: string, payloadApiKey: string): string {
+  const direct = nonEmpty(payloadApiKey);
+  if (direct) return direct;
+
+  if (provider === "gemini") return nonEmpty(process.env.GEMINI_API_KEY) ?? "";
+  if (provider === "openai") return nonEmpty(process.env.OPENAI_API_KEY) ?? "";
+  if (provider === "claude") return nonEmpty(process.env.ANTHROPIC_API_KEY) ?? "";
+  return "";
+}
+
+function normalizeOpenAiText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (part && typeof part === "object" && "text" in part && typeof part.text === "string") {
+          return part.text;
+        }
+        return "";
+      })
+      .join("\n")
+      .trim();
+  }
+  return "";
+}
+
+async function responseError(prefix: string, res: Response): Promise<Error> {
+  const text = await res.text();
+  return new Error(`${prefix}: ${res.status} ${res.statusText} - ${text.slice(0, 800)}`);
+}
+
 async function callGemini(payload: RunLlmPayload): Promise<{ outputText: string }> {
   const genAI = new GoogleGenerativeAI(payload.apiKey);
   const model = genAI.getGenerativeModel({
@@ -28,7 +74,7 @@ async function callGemini(payload: RunLlmPayload): Promise<{ outputText: string 
 
   for (const url of payload.imageUrls) {
     console.log(`[run-llm] Fetching image: ${url.slice(0, 80)}…`);
-    const r = await fetch(url);
+    const r = await fetchWithTimeout(url, undefined, 30000);
     if (!r.ok) throw new Error(`Failed to fetch image: ${url}`);
     const buf = Buffer.from(await r.arrayBuffer());
     const mime = r.headers.get("content-type") ?? "image/jpeg";
@@ -44,7 +90,8 @@ async function callGemini(payload: RunLlmPayload): Promise<{ outputText: string 
   const result = await model.generateContent({
     contents: [{ role: "user", parts }],
   });
-  const text = result.response.text();
+  const text = result.response.text()?.trim() ?? "";
+  if (!text) throw new Error("Gemini returned an empty response");
   console.log(`[run-llm] ✓ Response received — ${text.length} chars`);
   return { outputText: text };
 }
@@ -69,7 +116,7 @@ async function callOpenAI(payload: RunLlmPayload): Promise<{ outputText: string 
   }
 
   console.log(`[run-llm] Calling OpenAI API…`);
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -79,15 +126,21 @@ async function callOpenAI(payload: RunLlmPayload): Promise<{ outputText: string 
       model: payload.model,
       messages,
     }),
-  });
+  }, 45000);
 
   if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`OpenAI API error: ${res.status} - ${error}`);
+    throw await responseError("OpenAI API error", res);
   }
 
-  const data = await res.json() as { choices: Array<{ message: { content: string } }> };
-  const text = data.choices[0]?.message?.content || "";
+  const data = await res.json() as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    error?: { message?: string };
+  };
+
+  if (data.error?.message) throw new Error(`OpenAI API error: ${data.error.message}`);
+
+  const text = normalizeOpenAiText(data.choices?.[0]?.message?.content);
+  if (!text) throw new Error("OpenAI returned an empty response");
   console.log(`[run-llm] ✓ Response received — ${text.length} chars`);
   return { outputText: text };
 }
@@ -99,7 +152,7 @@ async function callClaude(payload: RunLlmPayload): Promise<{ outputText: string 
 
   for (const url of payload.imageUrls) {
     console.log(`[run-llm] Fetching image: ${url.slice(0, 80)}…`);
-    const r = await fetch(url);
+    const r = await fetchWithTimeout(url, undefined, 30000);
     if (!r.ok) throw new Error(`Failed to fetch image: ${url}`);
     const buf = Buffer.from(await r.arrayBuffer());
     const mime = r.headers.get("content-type") ?? "image/jpeg";
@@ -114,7 +167,7 @@ async function callClaude(payload: RunLlmPayload): Promise<{ outputText: string 
   }
 
   console.log(`[run-llm] Calling Claude API…`);
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -127,15 +180,26 @@ async function callClaude(payload: RunLlmPayload): Promise<{ outputText: string 
       ...(payload.systemPrompt?.trim() ? { system: payload.systemPrompt.trim() } : {}),
       messages: [{ role: "user", content }],
     }),
-  });
+  }, 45000);
 
   if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`Claude API error: ${res.status} - ${error}`);
+    throw await responseError("Claude API error", res);
   }
 
-  const data = await res.json() as { content: Array<{ text: string }> };
-  const text = data.content[0]?.text || "";
+  const data = await res.json() as {
+    content?: Array<{ type?: string; text?: string }>;
+    error?: { message?: string };
+  };
+
+  if (data.error?.message) throw new Error(`Claude API error: ${data.error.message}`);
+
+  const text = (data.content ?? [])
+    .filter((c) => c.type === "text" && typeof c.text === "string")
+    .map((c) => c.text ?? "")
+    .join("\n")
+    .trim();
+
+  if (!text) throw new Error("Claude returned an empty response");
   console.log(`[run-llm] ✓ Response received — ${text.length} chars`);
   return { outputText: text };
 }
@@ -151,24 +215,33 @@ export const runLlmTask = task({
   retry: { maxAttempts: 2 },
   run: async (payload: RunLlmPayload) => {
     console.log(`[run-llm] Starting — provider: ${payload.provider}, model: ${payload.model}, msgLen: ${payload.userMessage.length}, images: ${payload.imageUrls.length}`);
-    
-    const apiKey = payload.apiKey?.trim();
+
+    const apiKey = providerApiKey(payload.provider, payload.apiKey);
     if (!apiKey) {
-      console.error("[run-llm] apiKey is not provided in payload");
-      throw new Error("API key is required in the LLM node");
+      console.error(`[run-llm] API key missing for provider: ${payload.provider}`);
+      throw new Error(`Missing API key for provider '${payload.provider}'. Set it in the node or environment variables.`);
     }
 
-    switch (payload.provider) {
+    const normalized: RunLlmPayload = {
+      ...payload,
+      apiKey,
+      userMessage: payload.userMessage.trim(),
+      systemPrompt: payload.systemPrompt?.trim() || undefined,
+    };
+
+    if (!normalized.userMessage) throw new Error("User message is required");
+
+    switch (normalized.provider) {
       case "gemini":
-        return await callGemini(payload);
+        return await callGemini(normalized);
       case "openai":
-        return await callOpenAI(payload);
+        return await callOpenAI(normalized);
       case "claude":
-        return await callClaude(payload);
+        return await callClaude(normalized);
       case "bedrock":
-        return await callBedrock(payload);
+        return await callBedrock(normalized);
       default:
-        throw new Error(`Unsupported LLM provider: ${payload.provider}`);
+        throw new Error(`Unsupported LLM provider: ${normalized.provider}`);
     }
   },
 });

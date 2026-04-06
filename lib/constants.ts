@@ -7,9 +7,10 @@ export const LLM_PROVIDERS = [
 
 export const LLM_MODELS = {
   gemini: [
-    { id: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash Experimental" },
-    { id: "gemini-2.0-flash-thinking-exp-1219", label: "Gemini 2.0 Flash Thinking" },
-    { id: "gemini-exp-1206", label: "Gemini Experimental 1206" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+    { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
+    { id: "gemini-3-flash", label: "Gemini 3 Flash" },
     { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
     { id: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
     { id: "gemini-1.5-flash-8b", label: "Gemini 1.5 Flash-8B" },
