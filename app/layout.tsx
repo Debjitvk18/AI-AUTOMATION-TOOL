@@ -2,6 +2,17 @@ import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "next-themes";
+import { Space_Grotesk, Syne } from "next/font/google";
+
+const sansFont = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const displayFont = Syne({
+  subsets: ["latin"],
+  variable: "--font-display",
+});
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +29,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body className="min-h-screen text-lg antialiased">
+        <body className={`${sansFont.variable} ${displayFont.variable} min-h-screen text-lg antialiased`}>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
             {children}
           </ThemeProvider>
