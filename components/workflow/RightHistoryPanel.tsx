@@ -104,17 +104,17 @@ export function RightHistoryPanel({
     >
       <div className="flex items-center gap-2 border-b px-3 py-2
         border-zinc-200 dark:border-zinc-800/80">
-        <History className="h-4 w-4 text-violet-500 dark:text-violet-400" />
+        <History className="h-4 w-4 text-violet-700 dark:text-violet-700" />
         {!collapsed ? (
-          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          <span className="text-xs font-semibold uppercase tracking-wide text-[var(--nf-text)]">
             Workflow history
           </span>
         ) : null}
         <button
           type="button"
           onClick={() => setCollapsed((c) => !c)}
-          className="ml-auto rounded p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700
-            dark:text-zinc-500 dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
+          className="ml-auto rounded p-1 text-[var(--nf-text)] transition hover:bg-zinc-100 hover:text-zinc-700
+         dark:hover:bg-zinc-900 dark:hover:text-zinc-200"
           aria-label={collapsed ? "Expand history sidebar" : "Collapse history sidebar"}
           title={collapsed ? "Expand" : "Collapse"}
         >
@@ -191,13 +191,13 @@ export function RightHistoryPanel({
                       <div key={nr.id} className="rounded-lg p-2 text-xs
                         bg-zinc-50 dark:bg-zinc-950/50">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-zinc-700 dark:text-zinc-300">
-                            {nr.nodeType} <span className="text-zinc-400 dark:text-zinc-600">({nr.nodeId.slice(0, 8)}…)</span>
+                          <span className="font-medium text-[var(--nf-text)]">
+                            {nr.nodeType} <span className="text-[var(--nf-text)]">({nr.nodeId.slice(0, 8)}…)</span>
                           </span>
                           <span
                             className={cn(
                               "rounded px-1 text-xs uppercase",
-                              nr.status === "SUCCESS" && "text-emerald-600 dark:text-emerald-400",
+                              nr.status === "SUCCESS" && "text-emerald-600 dark:text-emerald-300",
                               nr.status === "FAILED" && "text-red-600 dark:text-red-400",
                               nr.status === "RUNNING" && "text-amber-600 dark:text-amber-300",
                               nr.status === "PENDING" && "text-zinc-400 dark:text-zinc-600",
@@ -207,10 +207,10 @@ export function RightHistoryPanel({
                           </span>
                         </div>
                         {nr.durationMs != null ? (
-                          <p className="text-xs text-zinc-400 dark:text-zinc-600">{nr.durationMs} ms</p>
+                          <p className="text-xs text-[var(--nf-text)]">{nr.durationMs} ms</p>
                         ) : null}
                         {nr.outputsJson ? (
-                          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all text-xs text-zinc-500">
+                          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all text-xs text-[var(--nf-text)]">
                             {JSON.stringify(nr.outputsJson, null, 0)}
                           </pre>
                         ) : null}

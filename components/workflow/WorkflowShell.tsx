@@ -77,11 +77,11 @@ export function WorkflowShell({
   const [importing, setImporting] = useState(false);
 
   return (
-    <div className="flex h-screen min-h-0 flex-col bg-[var(--nf-bg)] text-zinc-800 dark:text-zinc-200">
+    <div className="flex h-screen min-h-0 flex-col bg-[var(--nf-bg)] text-[var(--nf-text)]">
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800/80">
         {/* Left side: logo + workflow selector */}
         <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">NextFlow</span>
+          <span className="shrink-0 text-sm font-semibold tracking-tight">NextFlow</span>
 
           {/* Editable workflow name */}
           {editingName ? (

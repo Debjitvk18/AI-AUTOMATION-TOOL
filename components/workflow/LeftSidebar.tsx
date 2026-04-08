@@ -88,7 +88,7 @@ export function LeftSidebar() {
         type="button"
         onClick={() => setCollapsed((c) => !c)}
         className="flex items-center justify-end border-b px-2 py-2
-          border-zinc-200 text-zinc-400 hover:text-zinc-700
+          border-zinc-200 text-zinc-900 hover:text-zinc-700
           dark:border-zinc-800/80 dark:text-zinc-500 dark:hover:text-zinc-200"
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
       >
@@ -112,7 +112,7 @@ export function LeftSidebar() {
           <div className="flex-1 overflow-y-auto px-2 py-2">
             {filteredCategories.map((cat) => (
               <div key={cat.name} className="mb-3">
-                <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-widest text-zinc-400 dark:text-zinc-500">
+                <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-widest">
                   {cat.name}
                 </p>
                 <div className="flex flex-col gap-0.5">
@@ -127,10 +127,10 @@ export function LeftSidebar() {
                       }}
                       onClick={() => addNode(item.type)}
                       className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1.5 text-left text-xs transition
-                        text-zinc-700 hover:border-zinc-300 hover:bg-zinc-100
-                        dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/80"
+                         hover:border-zinc-300 
+                        text-[var(--nf-text)] dark:hover:border-zinc-200 "
                     >
-                      <span className="text-violet-500 dark:text-violet-400">{item.icon}</span>
+                      <span className="text-violet-900 dark:text-violet-700">{item.icon}</span>
                       {item.label}
                     </button>
                   ))}

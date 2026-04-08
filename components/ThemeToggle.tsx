@@ -14,7 +14,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     return (
-      <button title="btn" className="rounded-lg p-2 text-zinc-500 dark:text-zinc-400 opacity-0">
+      <button type="submit" title="btn" className="rounded-lg p-2 text-zinc-900 dark:text-zinc-900 opacity-0">
         <Moon className="h-4 w-4" />
       </button>
     );
@@ -22,8 +22,9 @@ export function ThemeToggle() {
 
   return (
     <button
+      type="submit"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      className="rounded-lg p-2 text-zinc-500 transition hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+      className="rounded-lg p-2 text-zinc-900 transition hover:bg-black/5 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-white dark:hover:text-zinc-900"
       title="Toggle Theme"
     >
       {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
