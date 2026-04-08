@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { SVGFollower } from "@/components/ui/svg-follower";
 
 export default async function HomePage() {
   const { userId } = await auth();
@@ -8,11 +9,16 @@ export default async function HomePage() {
 
   return (
     <main className="nf-landing-bg relative min-h-screen overflow-hidden px-6 py-16 sm:px-10 lg:px-16">
+      <SVGFollower
+        className="absolute inset-0 z-0 opacity-70"
+        colors={["#00d4ff", "#f59e0b", "#34d399", "#38bdf8", "#ffffff"]}
+        removeDelay={420}
+      />
       <div className="nf-landing-orb nf-landing-orb-a" aria-hidden />
       <div className="nf-landing-orb nf-landing-orb-b" aria-hidden />
       <div className="nf-landing-grid pointer-events-none" aria-hidden />
 
-      <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-10 lg:gap-14">
+      <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-10 lg:gap-14">
         <div className="inline-flex w-fit items-center gap-2 rounded-full border border-(--nf-border) px-4 py-1.5 text-xs font-medium tracking-[0.18em] uppercase text-(--nf-muted) backdrop-blur-md">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-500" />
           AI Automation Studio
