@@ -59,6 +59,8 @@ model NodeRun {
   inputsJson  Json?
   outputsJson Json?
   error       String?
+  attempt     Int           @default(1)
+  maxAttempts Int           @default(1)
   createdAt   DateTime      @default(now())
 
   @@unique([runId, nodeId])

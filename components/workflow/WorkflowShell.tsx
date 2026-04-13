@@ -14,7 +14,7 @@ import {
   Undo2,
   Upload,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowStore } from "@/store/workflow-store";
 import { cn } from "@/lib/cn";
 import { ThemeToggle } from "../ThemeToggle";
@@ -60,6 +60,31 @@ export function WorkflowShell({
   const [nameInput, setNameInput] = useState("");
   const nameInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (dropdownRef.current?.contains(target)) return;
+      setDropdownOpen(false);
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [dropdownOpen]);
 
   const exportJson = useCallback(async () => {
     if (!workflowId) return;
@@ -275,8 +300,20 @@ export function WorkflowShell({
                 setImporting(true);
                 try {
                   const text = await f.text();
-                  const parsed = JSON.parse(text) as { graphJson?: unknown; name?: string };
-                  await fetch(`/api/workflows/${workflowId}/import`, {
+                  let parsed: { graphJson?: unknown; name?: string };
+                  try {
+                    parsed = JSON.parse(text) as { graphJson?: unknown; name?: string };
+                  } catch {
+                    window.alert("Invalid JSON file");
+                    return;
+                  }
+
+                  if (!parsed || typeof parsed !== "object" || parsed.graphJson === undefined) {
+                    window.alert("Invalid workflow file format");
+                    return;
+                  }
+
+                  const res = await fetch(`/api/workflows/${workflowId}/import`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
@@ -284,6 +321,14 @@ export function WorkflowShell({
                       name: parsed.name,
                     }),
                   });
+
+                  if (!res.ok) {
+                    const err = await res.json().catch(() => null);
+                    console.error("[NextFlow] Import failed", err);
+                    window.alert("Import failed. Please check the file content.");
+                    return;
+                  }
+
                   window.location.reload();
                 } finally {
                   setImporting(false);

@@ -5,7 +5,7 @@ import { ChevronLeft, ChevronRight, History, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 
-type RunWithNodes = WorkflowRun & { nodeRuns: NodeRun[] };
+type RunWithNodes = WorkflowRun & { nodeRuns: (NodeRun & { attempt: number; maxAttempts: number })[] };
 
 function badge(status: RunStatus) {
   switch (status) {
@@ -52,8 +52,14 @@ export function RightHistoryPanel({
     if (showLoading) setLoading(true);
     try {
       const res = await fetch(`/api/workflows/${workflowId}/runs`);
-      const j = await res.json();
-      if (res.ok) setRuns(j.runs as RunWithNodes[]);
+      const j = await res.json().catch(() => null) as { runs?: RunWithNodes[] } | null;
+      if (res.ok && Array.isArray(j?.runs)) {
+        setRuns(j.runs);
+      } else if (!res.ok) {
+        console.error("[NextFlow] Failed to fetch runs", j);
+      }
+    } catch (e) {
+      console.error("[NextFlow] Runs fetch error", e);
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -192,7 +198,13 @@ export function RightHistoryPanel({
                         bg-zinc-50 dark:bg-zinc-950/50">
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-medium text-[var(--nf-text)]">
-                            {nr.nodeType} <span className="text-[var(--nf-text)]">({nr.nodeId.slice(0, 8)}…)</span>
+                            {nr.nodeType}{" "}
+                            {nr.maxAttempts > 1 ? (
+                              <span className="text-violet-500 font-normal">
+                                {nr.attempt}/{nr.maxAttempts}
+                              </span>
+                            ) : null}{" "}
+                            <span className="text-[var(--nf-text)] font-normal text-xs opacity-60">({nr.nodeId.slice(0, 8)}…)</span>
                           </span>
                           <span
                             className={cn(

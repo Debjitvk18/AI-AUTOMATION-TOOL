@@ -6,6 +6,20 @@ import { WorkflowShell } from "./WorkflowShell";
 
 type WorkflowListItem = { id: string; name: string };
 
+type WorkflowWithGraph = {
+  id: string;
+  name: string;
+  graphJson?: { nodes?: unknown[]; edges?: unknown[] };
+};
+
+async function parseJsonSafe<T>(res: Response): Promise<T | null> {
+  try {
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function WorkflowPageClient() {
   const setWorkflowMeta = useWorkflowStore((s) => s.setWorkflowMeta);
   const setGraph = useWorkflowStore((s) => s.setGraph);
@@ -20,28 +34,36 @@ export function WorkflowPageClient() {
 
   // --- Fetch all workflows list ---
   const refreshWorkflowList = useCallback(async () => {
-    const res = await fetch("/api/workflows");
-    const j = await res.json();
-    if (res.ok) {
-      setAllWorkflows(j.workflows as WorkflowListItem[]);
+    try {
+      const res = await fetch("/api/workflows");
+      const j = await parseJsonSafe<{ workflows?: WorkflowListItem[] }>(res);
+      const workflows = Array.isArray(j?.workflows) ? j.workflows : [];
+      if (res.ok) {
+        setAllWorkflows(workflows);
+      }
+      return workflows;
+    } catch (e) {
+      console.error("[NextFlow] Failed to refresh workflow list", e);
+      return [];
     }
-    return j.workflows as WorkflowListItem[];
   }, []);
 
   // --- Load a specific workflow by ID ---
   const loadWorkflow = useCallback(async (id: string) => {
     console.log(`[NextFlow] Loading workflow: ${id}`);
     const gr = await fetch(`/api/workflows/${id}`);
-    const gj = await gr.json();
-    if (!gr.ok) {
+    const gj = await parseJsonSafe<{ workflow?: WorkflowWithGraph; error?: unknown }>(gr);
+    if (!gr.ok || !gj?.workflow) {
       console.error("[NextFlow] Failed to load workflow", gj);
       return;
     }
-    const wf = gj.workflow as { id: string; name: string; graphJson: { nodes: unknown[]; edges: unknown[] } };
+    const wf = gj.workflow;
+    const nodesSafe = Array.isArray(wf.graphJson?.nodes) ? wf.graphJson.nodes : [];
+    const edgesSafe = Array.isArray(wf.graphJson?.edges) ? wf.graphJson.edges : [];
     setWorkflowMeta(wf.id, wf.name);
-    setGraph(wf.graphJson.nodes as never[], wf.graphJson.edges as never[]);
+    setGraph(nodesSafe as never[], edgesSafe as never[]);
     setHistoryKey((k) => k + 1);
-    console.log(`[NextFlow] Loaded ${(wf.graphJson.nodes ?? []).length} nodes, ${(wf.graphJson.edges ?? []).length} edges`);
+    console.log(`[NextFlow] Loaded ${nodesSafe.length} nodes, ${edgesSafe.length} edges`);
   }, [setGraph, setWorkflowMeta]);
 
   // --- Bootstrap: load first workflow or create empty ---
@@ -62,12 +84,12 @@ export function WorkflowPageClient() {
         graphJson: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
       }),
     });
-    const cj = await cr.json();
-    if (!cr.ok) {
+    const cj = await parseJsonSafe<{ workflow?: WorkflowListItem; error?: unknown }>(cr);
+    if (!cr.ok || !cj?.workflow) {
       console.error("[NextFlow] Failed to create workflow", cj);
       return;
     }
-    const created = cj.workflow as WorkflowListItem;
+    const created = cj.workflow;
     setWorkflowMeta(created.id, created.name);
     setGraph([], []);
     setAllWorkflows([created]);
@@ -91,7 +113,7 @@ export function WorkflowPageClient() {
         }),
       });
       if (!res.ok) {
-        const j = await res.json();
+        const j = await parseJsonSafe<{ error?: unknown }>(res);
         console.error("[NextFlow] Save failed:", j);
       }
     } finally {
@@ -116,9 +138,9 @@ export function WorkflowPageClient() {
             targetNodeIds,
           }),
         });
-        const j = await res.json();
-        if (!res.ok) throw new Error(j.error ?? "Run failed");
-        console.log(`[NextFlow] Run created: ${j.runId}`);
+        const j = await parseJsonSafe<{ runId?: string; error?: string }>(res);
+        if (!res.ok) throw new Error(j?.error ?? "Run failed");
+        console.log(`[NextFlow] Run created: ${j?.runId ?? "unknown"}`);
         setHistoryKey((k) => k + 1);
       } finally {
         setRunning(false);
@@ -150,12 +172,12 @@ export function WorkflowPageClient() {
         graphJson: { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
       }),
     });
-    const cj = await cr.json();
-    if (!cr.ok) {
+    const cj = await parseJsonSafe<{ workflow?: WorkflowListItem; error?: unknown }>(cr);
+    if (!cr.ok || !cj?.workflow) {
       console.error("[NextFlow] Create failed:", cj);
       return;
     }
-    const created = cj.workflow as WorkflowListItem;
+    const created = cj.workflow;
     setWorkflowMeta(created.id, created.name);
     setGraph([], []);
     setHistoryKey((k) => k + 1);

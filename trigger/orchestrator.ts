@@ -11,6 +11,7 @@ import { extractFrameTask } from "./extract-frame";
 import { httpRequestTask } from "./http-request";
 import { runLlmTask } from "./run-llm";
 import { sendNotificationTask } from "./send-notification";
+import { parseRetryPolicy, computeDelay, isRetryableError } from "../lib/retry";
 
 export type WorkflowOrchestratorPayload = {
   workflowRunId: string;
@@ -224,9 +225,11 @@ export const workflowOrchestratorTask = task({
 
         await markNode(nodeId, NodeRunStatus.RUNNING, {});
         const data = asRecord(node.data);
+        const retryPolicy = parseRetryPolicy(node.data);
 
-        try {
-          let out: Record<string, unknown>;
+        for (let attempt = 1; attempt <= retryPolicy.maxAttempts; attempt++) {
+          try {
+            let out: Record<string, unknown>;
 
           // =============================================
           // INLINE NODES — no sub-task, instant execution
@@ -369,21 +372,39 @@ export const workflowOrchestratorTask = task({
             throw new Error(`Unsupported node type: ${nodeType}`);
           }
 
-          const ms = Date.now() - t0;
-          outputs[nodeId] = out;
-          console.log(`[orchestrator]   ✓ ${nodeType} (${nodeId}) — SUCCESS ${ms}ms`);
-          await markNode(nodeId, NodeRunStatus.SUCCESS, {
-            durationMs: ms, inputsJson: data, outputsJson: out, error: null,
-          });
+            const ms = Date.now() - t0;
+            outputs[nodeId] = out;
+            console.log(`[orchestrator]   ✓ ${nodeType} (${nodeId}) — SUCCESS ${ms}ms (attempt ${attempt})`);
+            await markNode(nodeId, NodeRunStatus.SUCCESS, {
+              durationMs: ms, inputsJson: data, outputsJson: out, error: null,
+            });
+            break; // SUCCESS -> break retry loop
 
-        } catch (err) {
-          const ms = Date.now() - t0;
-          failed.add(nodeId);
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.error(`[orchestrator]   ✗ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg}`);
-          await markNode(nodeId, NodeRunStatus.FAILED, {
-            durationMs: ms, error: errMsg, inputsJson: data, outputsJson: {},
-          });
+          } catch (err) {
+            const ms = Date.now() - t0;
+            const errMsg = err instanceof Error ? err.message : String(err);
+            
+            if (attempt < retryPolicy.maxAttempts && isRetryableError(retryPolicy, errMsg)) {
+              const delayMs = computeDelay(retryPolicy, attempt);
+              console.warn(`[orchestrator]   ⚠ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg} -> Retrying in ${delayMs}ms (attempt ${attempt}/${retryPolicy.maxAttempts})`);
+              await markNode(nodeId, NodeRunStatus.RUNNING, {
+                attempt: attempt + 1,
+                maxAttempts: retryPolicy.maxAttempts,
+                error: `Attempt ${attempt} failed: ${errMsg}`,
+              });
+              await new Promise(r => setTimeout(r, delayMs));
+              continue; // try again
+            }
+
+            // Final failure
+            failed.add(nodeId);
+            console.error(`[orchestrator]   ✗ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg}`);
+            await markNode(nodeId, NodeRunStatus.FAILED, {
+              durationMs: ms, error: errMsg, inputsJson: data, outputsJson: {},
+              attempt, maxAttempts: retryPolicy.maxAttempts,
+            });
+            break;
+          }
         }
       }
     }
