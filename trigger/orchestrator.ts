@@ -11,7 +11,9 @@ import { extractFrameTask } from "./extract-frame";
 import { httpRequestTask } from "./http-request";
 import { runLlmTask } from "./run-llm";
 import { sendNotificationTask } from "./send-notification";
-import { parseRetryPolicy, computeDelay, isRetryableError } from "../lib/retry";
+
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 2000;
 
 export type WorkflowOrchestratorPayload = {
   workflowRunId: string;
@@ -181,6 +183,7 @@ export const workflowOrchestratorTask = task({
 
     const outputs: OutputsMap = {};
     const failed = new Set<string>();
+    const retryCountByNode = new Map<string, number>();
 
     async function markNode(
       nodeId: string,
@@ -225,9 +228,9 @@ export const workflowOrchestratorTask = task({
 
         await markNode(nodeId, NodeRunStatus.RUNNING, {});
         const data = asRecord(node.data);
-        const retryPolicy = parseRetryPolicy(node.data);
+        retryCountByNode.set(nodeId, 0);
 
-        for (let attempt = 1; attempt <= retryPolicy.maxAttempts; attempt++) {
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
           try {
             let out: Record<string, unknown>;
 
@@ -374,7 +377,8 @@ export const workflowOrchestratorTask = task({
 
             const ms = Date.now() - t0;
             outputs[nodeId] = out;
-            console.log(`[orchestrator]   ✓ ${nodeType} (${nodeId}) — SUCCESS ${ms}ms (attempt ${attempt})`);
+            const retryCount = retryCountByNode.get(nodeId) ?? 0;
+            console.log(`[orchestrator]   ✓ ${nodeType} (${nodeId}) — SUCCESS ${ms}ms (attempt ${attempt}, retries=${retryCount})`);
             await markNode(nodeId, NodeRunStatus.SUCCESS, {
               durationMs: ms, inputsJson: data, outputsJson: out, error: null,
             });
@@ -383,16 +387,14 @@ export const workflowOrchestratorTask = task({
           } catch (err) {
             const ms = Date.now() - t0;
             const errMsg = err instanceof Error ? err.message : String(err);
-            
-            if (attempt < retryPolicy.maxAttempts && isRetryableError(retryPolicy, errMsg)) {
-              const delayMs = computeDelay(retryPolicy, attempt);
-              console.warn(`[orchestrator]   ⚠ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg} -> Retrying in ${delayMs}ms (attempt ${attempt}/${retryPolicy.maxAttempts})`);
+
+            if (attempt < MAX_ATTEMPTS) {
+              retryCountByNode.set(nodeId, attempt);
+              console.warn(`[orchestrator]   ⚠ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg} -> Retrying in ${RETRY_DELAY_MS}ms (attempt ${attempt}/${MAX_ATTEMPTS})`);
               await markNode(nodeId, NodeRunStatus.RUNNING, {
-                attempt: attempt + 1,
-                maxAttempts: retryPolicy.maxAttempts,
                 error: `Attempt ${attempt} failed: ${errMsg}`,
               });
-              await new Promise(r => setTimeout(r, delayMs));
+              await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
               continue; // try again
             }
 
@@ -401,7 +403,6 @@ export const workflowOrchestratorTask = task({
             console.error(`[orchestrator]   ✗ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg}`);
             await markNode(nodeId, NodeRunStatus.FAILED, {
               durationMs: ms, error: errMsg, inputsJson: data, outputsJson: {},
-              attempt, maxAttempts: retryPolicy.maxAttempts,
             });
             break;
           }
