@@ -2,7 +2,7 @@ import type { Edge, Node } from "@xyflow/react";
 import { NodeRunStatus, RunStatus } from "@prisma/client";
 import { task } from "@trigger.dev/sdk";
 import { HANDLE } from "../lib/handles";
-import { parseNodeType } from "../lib/graph";
+import { parseNodeType, topologicalLayers } from "../lib/graph";
 import { executionLayers } from "../lib/plan";
 import type { RunScope } from "../lib/node-types";
 import { prisma } from "../lib/prisma";
@@ -25,6 +25,72 @@ export type WorkflowOrchestratorPayload = {
 };
 
 type OutputsMap = Record<string, Record<string, unknown>>;
+
+function stringifyLoopItem(item: unknown): string {
+  if (typeof item === "string") return item;
+  try {
+    return JSON.stringify(item);
+  } catch {
+    return String(item);
+  }
+}
+
+function parseItemsInput(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      if (value.trim().length > 0) return [value];
+    }
+  }
+  return [];
+}
+
+function readItemsOut(outputs: OutputsMap, id: string): unknown[] | undefined {
+  const o = outputs[id];
+  if (!o) return undefined;
+  if (Array.isArray(o.items)) return o.items;
+  if (Array.isArray(o.outputs)) return o.outputs;
+  if (Array.isArray(o.array)) return o.array;
+  if (typeof o.text === "string") {
+    const parsed = parseItemsInput(o.text);
+    if (parsed.length > 0) return parsed;
+  }
+  return undefined;
+}
+
+function resolveLoopItemsInput(
+  nodeId: string,
+  edges: Edge[],
+  outputs: OutputsMap,
+  manual: unknown,
+): unknown[] {
+  const incoming = edges.find((e) => e.target === nodeId);
+  if (incoming) {
+    const fromSource = readItemsOut(outputs, incoming.source);
+    if (fromSource) return fromSource;
+  }
+  return parseItemsInput(manual);
+}
+
+function collectDownstreamNodeIds(startNodeId: string, edges: Edge[]): string[] {
+  const seen = new Set<string>();
+  const queue: string[] = [startNodeId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const direct = edges.filter((e) => e.source === current).map((e) => e.target);
+    for (const target of direct) {
+      if (target === startNodeId || seen.has(target)) continue;
+      seen.add(target);
+      queue.push(target);
+    }
+  }
+
+  return [...seen];
+}
 
 function asRecord(d: unknown): Record<string, unknown> {
   return d && typeof d === "object" && !Array.isArray(d) ? (d as Record<string, unknown>) : {};
@@ -184,6 +250,7 @@ export const workflowOrchestratorTask = task({
     const outputs: OutputsMap = {};
     const failed = new Set<string>();
     const retryCountByNode = new Map<string, number>();
+    const loopManagedNodes = new Set<string>();
 
     async function markNode(
       nodeId: string,
@@ -201,11 +268,173 @@ export const workflowOrchestratorTask = task({
       });
     }
 
+    async function executeNodeForLoop(
+      nodeId: string,
+      outputsCtx: OutputsMap,
+      failedCtx: Set<string>,
+    ): Promise<Record<string, unknown> | null> {
+      const node = nodes.find((n) => n.id === nodeId);
+      if (!node) return null;
+      const nodeType = parseNodeType(node);
+      if (!nodeType) return null;
+      const data = asRecord(node.data);
+
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          let out: Record<string, unknown>;
+
+          if (nodeType === "text") {
+            out = { text: String(data.text ?? "") };
+
+          } else if (nodeType === "uploadImage") {
+            const url = String(data.url ?? "");
+            if (!url) throw new Error("Image URL missing — upload a file first");
+            out = { url };
+
+          } else if (nodeType === "uploadVideo") {
+            const url = String(data.url ?? "");
+            if (!url) throw new Error("Video URL missing — upload a file first");
+            out = { url };
+
+          } else if (nodeType === "manualTrigger") {
+            out = { text: String(data.inputData ?? "{}") };
+
+          } else if (nodeType === "webhookTrigger") {
+            out = { text: String(data.lastPayload ?? "{}") };
+
+          } else if (nodeType === "scheduleTrigger") {
+            const now = new Date().toISOString();
+            out = { text: now, cron: String(data.cron ?? ""), triggeredAt: now };
+
+          } else if (nodeType === "ifElse") {
+            const inputText = resolveTextInput(nodeId, HANDLE.conditionIn, edges, outputsCtx, "");
+            const field = String(data.field ?? "");
+            const operator = String(data.operator ?? "equals");
+            const value = String(data.value ?? "");
+            const result = evaluateCondition(inputText, field, operator, value);
+            out = { text: inputText, result: String(result), conditionResult: result, truePath: result, falsePath: !result };
+
+          } else if (nodeType === "dataTransform") {
+            const inputText = resolveTextInput(nodeId, HANDLE.transformIn, edges, outputsCtx, "");
+            const operation = String(data.operation ?? "jsonParse");
+            const template = String(data.template ?? "");
+            out = { text: applyTransform(inputText, operation, template) };
+
+          } else if (nodeType === "llm") {
+            const provider = String(data.provider ?? "gemini");
+            const apiKey = String(data.apiKey ?? "").trim();
+            const model = String(data.model ?? "gemini-2.5-flash");
+            const systemPrompt = resolveTextInput(nodeId, HANDLE.systemPrompt, edges, outputsCtx, String(data.systemPrompt ?? ""));
+            const userMessage = resolveTextInput(nodeId, HANDLE.userMessage, edges, outputsCtx, String(data.userMessage ?? ""));
+            if (!userMessage.trim()) throw new Error("User message is required");
+
+            const imageEdges = edges.filter((e) => e.target === nodeId && e.targetHandle === HANDLE.images);
+            const imageUrls = imageEdges.map((e) => readImageUrl(outputsCtx, e.source)).filter((u): u is string => typeof u === "string");
+            const run = await runLlmTask.triggerAndWait({
+              workflowRunId,
+              nodeId,
+              userId,
+              provider,
+              apiKey,
+              model,
+              systemPrompt: systemPrompt.trim() || undefined,
+              userMessage: userMessage.trim(),
+              imageUrls,
+            });
+            if (!run.ok) throw new Error(String(run.error ?? "LLM task failed"));
+            out = run.output;
+
+          } else if (nodeType === "cropImage") {
+            const imgEdge = edges.find((e) => e.target === nodeId && e.targetHandle === HANDLE.cropImageIn);
+            const manualUrl = String(data.imageUrl ?? "");
+            const imageUrl = imgEdge ? readImageUrl(outputsCtx, imgEdge.source) : manualUrl;
+            if (!imageUrl) throw new Error("Crop image input is required");
+
+            const x = Number(resolveTextInput(nodeId, HANDLE.cropX, edges, outputsCtx, String(data.xPercent ?? 0)));
+            const y = Number(resolveTextInput(nodeId, HANDLE.cropY, edges, outputsCtx, String(data.yPercent ?? 0)));
+            const w = Number(resolveTextInput(nodeId, HANDLE.cropW, edges, outputsCtx, String(data.widthPercent ?? 100)));
+            const h = Number(resolveTextInput(nodeId, HANDLE.cropH, edges, outputsCtx, String(data.heightPercent ?? 100)));
+
+            const cr = await cropImageTask.triggerAndWait({
+              workflowRunId,
+              nodeId,
+              userId,
+              imageUrl,
+              xPercent: parsePercent(String(x), 0),
+              yPercent: parsePercent(String(y), 0),
+              widthPercent: parsePercent(String(w), 100),
+              heightPercent: parsePercent(String(h), 100),
+            });
+            if (!cr.ok) throw new Error(String(cr.error ?? "Crop failed"));
+            out = cr.output;
+
+          } else if (nodeType === "extractFrame") {
+            const vEdge = edges.find((e) => e.target === nodeId && e.targetHandle === HANDLE.extractVideo);
+            const manualV = String(data.videoUrl ?? "");
+            const videoUrl = vEdge ? readVideoUrl(outputsCtx, vEdge.source) : manualV;
+            if (!videoUrl) throw new Error("Video URL is required");
+
+            const ts = resolveTextInput(nodeId, HANDLE.extractTs, edges, outputsCtx, String(data.timestamp ?? "0"));
+            const ex = await extractFrameTask.triggerAndWait({ workflowRunId, nodeId, userId, videoUrl, timestamp: ts });
+            if (!ex.ok) throw new Error(String(ex.error ?? "Extract frame failed"));
+            out = ex.output;
+
+          } else if (nodeType === "httpRequest") {
+            const method = String(data.method ?? "GET");
+            const url = resolveTextInput(nodeId, HANDLE.httpUrlIn, edges, outputsCtx, String(data.url ?? ""));
+            const body = resolveTextInput(nodeId, HANDLE.httpBodyIn, edges, outputsCtx, String(data.body ?? ""));
+            const headers = String(data.headers ?? "{}");
+            if (!url) throw new Error("HTTP Request URL is required");
+
+            const run = await httpRequestTask.triggerAndWait({ method, url, headers, body });
+            if (!run.ok) throw new Error(String(run.error ?? "HTTP request failed"));
+            out = run.output;
+
+          } else if (nodeType === "notification") {
+            const inputText = resolveTextInput(nodeId, HANDLE.notificationIn, edges, outputsCtx, "");
+            const notifType = String(data.notifType ?? "console");
+            const webhookUrl = String(data.webhookUrl ?? "");
+            const messageTemplate = String(data.message ?? "{{input}}");
+            const message = messageTemplate.replace(/\{\{input\}\}/g, inputText);
+
+            const run = await sendNotificationTask.triggerAndWait({ notifType, webhookUrl, message });
+            if (!run.ok) throw new Error(String(run.error ?? "Notification failed"));
+            out = run.output;
+
+          } else if (nodeType === "loop") {
+            throw new Error("Nested loop execution is not supported");
+
+          } else {
+            throw new Error(`Unsupported node type: ${nodeType}`);
+          }
+
+          outputsCtx[nodeId] = out;
+          return out;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          if (attempt < MAX_ATTEMPTS) {
+            await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+            continue;
+          }
+          failedCtx.add(nodeId);
+          console.error(`[orchestrator][loop] ✗ ${nodeType} (${nodeId}) — FAILED: ${errMsg}`);
+          return null;
+        }
+      }
+
+      return null;
+    }
+
     for (let layerIdx = 0; layerIdx < layers.length; layerIdx++) {
       const layer = layers[layerIdx]!;
       console.log(`[orchestrator] ── Layer ${layerIdx + 1}/${layers.length}: [${layer.join(", ")}]`);
 
       for (const nodeId of layer) {
+        if (loopManagedNodes.has(nodeId)) {
+          console.log(`[orchestrator]   ↷ skipping ${nodeId} (already executed inside loop)`);
+          continue;
+        }
+
         const node = nodes.find((n) => n.id === nodeId);
         if (!node) continue;
         const nodeType = parseNodeType(node);
@@ -259,6 +488,114 @@ export const workflowOrchestratorTask = task({
             const inputData = String(data.inputData ?? "{}");
             console.log(`[orchestrator]   … manualTrigger: len=${inputData.length}`);
             out = { text: inputData };
+
+          } else if (nodeType === "loop") {
+            const items = resolveLoopItemsInput(nodeId, edges, outputs, data.items);
+            console.log(`[orchestrator]   … loop: items=${items.length}`);
+
+            const downstreamIds = collectDownstreamNodeIds(nodeId, edges);
+            if (downstreamIds.length === 0) {
+              out = { items: [], count: items.length };
+            } else {
+              for (const downstreamId of downstreamIds) {
+                loopManagedNodes.add(downstreamId);
+              }
+
+              const downstreamIdSet = new Set(downstreamIds);
+              const downstreamEdges = edges.filter(
+                (e) => downstreamIdSet.has(e.source) && downstreamIdSet.has(e.target),
+              );
+              const downstreamLayers = topologicalLayers(downstreamIds, downstreamEdges);
+
+              const iterationResults: Array<Record<string, unknown>> = [];
+              const downstreamAggregates = new Map<string, unknown[]>();
+              const downstreamFailureCounts = new Map<string, number>();
+
+              for (let index = 0; index < items.length; index++) {
+                const item = items[index];
+                const itemText = stringifyLoopItem(item);
+                const iterationOutputs: OutputsMap = {
+                  ...outputs,
+                  [nodeId]: {
+                    item,
+                    index,
+                    text: itemText,
+                    outputText: itemText,
+                  },
+                };
+                const iterationFailed = new Set<string>();
+
+                for (const loopLayer of downstreamLayers) {
+                  for (const downstreamId of loopLayer) {
+                    if (upstreamHasFailure(downstreamId, downstreamEdges, iterationFailed)) {
+                      iterationFailed.add(downstreamId);
+                      downstreamFailureCounts.set(
+                        downstreamId,
+                        (downstreamFailureCounts.get(downstreamId) ?? 0) + 1,
+                      );
+                      continue;
+                    }
+
+                    const downstreamOut = await executeNodeForLoop(
+                      downstreamId,
+                      iterationOutputs,
+                      iterationFailed,
+                    );
+
+                    if (downstreamOut) {
+                      const agg = downstreamAggregates.get(downstreamId) ?? [];
+                      agg.push(downstreamOut);
+                      downstreamAggregates.set(downstreamId, agg);
+                    } else {
+                      downstreamFailureCounts.set(
+                        downstreamId,
+                        (downstreamFailureCounts.get(downstreamId) ?? 0) + 1,
+                      );
+                    }
+                  }
+                }
+
+                iterationResults.push({
+                  index,
+                  item,
+                  failedNodeIds: [...iterationFailed],
+                  outputs: Object.fromEntries(
+                    downstreamIds
+                      .filter((id) => iterationOutputs[id] !== undefined)
+                      .map((id) => [id, iterationOutputs[id]!]),
+                  ),
+                });
+              }
+
+              for (const downstreamId of downstreamIds) {
+                const aggregatedItems = downstreamAggregates.get(downstreamId) ?? [];
+                const failuresForNode = downstreamFailureCounts.get(downstreamId) ?? 0;
+                const allFailed =
+                  items.length > 0 && aggregatedItems.length === 0 && failuresForNode > 0;
+
+                await markNode(downstreamId, allFailed ? NodeRunStatus.FAILED : NodeRunStatus.SUCCESS, {
+                  durationMs: Date.now() - t0,
+                  inputsJson: { loopNodeId: nodeId, itemCount: items.length },
+                  outputsJson: { items: aggregatedItems },
+                  error: allFailed
+                    ? `Loop iterations failed for all ${items.length} item(s)`
+                    : failuresForNode > 0
+                      ? `Loop had ${failuresForNode} failed item iteration(s)`
+                      : null,
+                });
+
+                if (allFailed) {
+                  failed.add(downstreamId);
+                }
+
+                outputs[downstreamId] = { items: aggregatedItems };
+              }
+
+              out = {
+                items: iterationResults,
+                count: items.length,
+              };
+            }
 
           } else if (nodeType === "webhookTrigger") {
             const lastPayload = String(data.lastPayload ?? "{}");

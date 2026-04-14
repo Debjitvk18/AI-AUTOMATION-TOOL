@@ -15,6 +15,7 @@ export const nodeTypeIdSchema = z.enum([
   "notification",
   "scheduleTrigger",
   "manualTrigger",
+  "loop",
 ]);
 
 export type NodeTypeId = z.infer<typeof nodeTypeIdSchema>;
