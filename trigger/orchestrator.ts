@@ -25,6 +25,10 @@ export type WorkflowOrchestratorPayload = {
 };
 
 type OutputsMap = Record<string, Record<string, unknown>>;
+type SwitchCondition = { operator?: unknown; value?: unknown; outputHandle?: unknown };
+
+const SWITCH_VALUE_IN_HANDLE = "switch-value-in";
+const SWITCH_DEFAULT_OUTPUT_HANDLE = "default";
 
 function stringifyLoopItem(item: unknown): string {
   if (typeof item === "string") return item;
@@ -90,6 +94,95 @@ function collectDownstreamNodeIds(startNodeId: string, edges: Edge[]): string[] 
   }
 
   return [...seen];
+}
+
+function normalizeSwitchConditions(raw: unknown): Array<{ operator: string; value: string; outputHandle: string }> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ operator: string; value: string; outputHandle: string }> = [];
+  for (const row of raw) {
+    const c = row as SwitchCondition;
+    if (!c || typeof c !== "object") continue;
+    const outputHandle = String(c.outputHandle ?? "").trim();
+    if (!outputHandle) continue;
+    out.push({
+      operator: String(c.operator ?? "equals").trim() || "equals",
+      value: String(c.value ?? ""),
+      outputHandle,
+    });
+  }
+  return out;
+}
+
+function evaluateSwitchCondition(inputValue: string, operator: string, conditionValue: string): boolean {
+  const op = operator.toLowerCase();
+
+  if (op === "equals" || op === "eq") return inputValue === conditionValue;
+  if (op === "notequals" || op === "ne") return inputValue !== conditionValue;
+  if (op === "contains") return inputValue.includes(conditionValue);
+  if (op === "startswith") return inputValue.startsWith(conditionValue);
+  if (op === "endswith") return inputValue.endsWith(conditionValue);
+
+  const leftNum = Number(inputValue);
+  const rightNum = Number(conditionValue);
+  const numeric = Number.isFinite(leftNum) && Number.isFinite(rightNum);
+  if (numeric) {
+    if (op === "gt") return leftNum > rightNum;
+    if (op === "gte") return leftNum >= rightNum;
+    if (op === "lt") return leftNum < rightNum;
+    if (op === "lte") return leftNum <= rightNum;
+  }
+
+  return false;
+}
+
+function resolveSwitchInput(
+  nodeId: string,
+  edges: Edge[],
+  outputs: OutputsMap,
+  manual: unknown,
+): string {
+  const manualString = String(manual ?? "");
+  const byKnownHandle = resolveTextInput(nodeId, SWITCH_VALUE_IN_HANDLE, edges, outputs, manualString);
+  if (byKnownHandle !== manualString || manualString.trim().length > 0) {
+    return byKnownHandle;
+  }
+
+  const anyIncoming = edges.find((e) => e.target === nodeId);
+  if (!anyIncoming) return manualString;
+  const fromUpstream = readTextOut(outputs, anyIncoming.source);
+  return fromUpstream ?? manualString;
+}
+
+function computeSwitchSkipNodeIds(
+  nodeId: string,
+  selectedOutputHandle: string,
+  edges: Edge[],
+): string[] {
+  const switchOutEdges = edges.filter((e) => e.source === nodeId);
+  const selectedRoots = switchOutEdges
+    .filter((e) => String(e.sourceHandle ?? "") === selectedOutputHandle)
+    .map((e) => e.target);
+  const nonSelectedRoots = switchOutEdges
+    .filter((e) => String(e.sourceHandle ?? "") !== selectedOutputHandle)
+    .map((e) => e.target);
+
+  const selectedDesc = new Set<string>();
+  for (const root of selectedRoots) {
+    selectedDesc.add(root);
+    for (const id of collectDownstreamNodeIds(root, edges)) {
+      selectedDesc.add(id);
+    }
+  }
+
+  const nonSelectedDesc = new Set<string>();
+  for (const root of nonSelectedRoots) {
+    nonSelectedDesc.add(root);
+    for (const id of collectDownstreamNodeIds(root, edges)) {
+      nonSelectedDesc.add(id);
+    }
+  }
+
+  return [...nonSelectedDesc].filter((id) => !selectedDesc.has(id));
 }
 
 function asRecord(d: unknown): Record<string, unknown> {
@@ -249,6 +342,7 @@ export const workflowOrchestratorTask = task({
 
     const outputs: OutputsMap = {};
     const failed = new Set<string>();
+    const skipped = new Set<string>();
     const retryCountByNode = new Map<string, number>();
     const loopManagedNodes = new Set<string>();
 
@@ -272,11 +366,14 @@ export const workflowOrchestratorTask = task({
       nodeId: string,
       outputsCtx: OutputsMap,
       failedCtx: Set<string>,
+      skippedCtx: Set<string>,
+      edgesCtx: Edge[],
     ): Promise<Record<string, unknown> | null> {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node) return null;
+      const rawNodeType = String(node.type ?? "");
       const nodeType = parseNodeType(node);
-      if (!nodeType) return null;
+      if (!nodeType && rawNodeType !== "switch") return null;
       const data = asRecord(node.data);
 
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -307,7 +404,7 @@ export const workflowOrchestratorTask = task({
             out = { text: now, cron: String(data.cron ?? ""), triggeredAt: now };
 
           } else if (nodeType === "ifElse") {
-            const inputText = resolveTextInput(nodeId, HANDLE.conditionIn, edges, outputsCtx, "");
+            const inputText = resolveTextInput(nodeId, HANDLE.conditionIn, edgesCtx, outputsCtx, "");
             const field = String(data.field ?? "");
             const operator = String(data.operator ?? "equals");
             const value = String(data.value ?? "");
@@ -315,20 +412,36 @@ export const workflowOrchestratorTask = task({
             out = { text: inputText, result: String(result), conditionResult: result, truePath: result, falsePath: !result };
 
           } else if (nodeType === "dataTransform") {
-            const inputText = resolveTextInput(nodeId, HANDLE.transformIn, edges, outputsCtx, "");
+            const inputText = resolveTextInput(nodeId, HANDLE.transformIn, edgesCtx, outputsCtx, "");
             const operation = String(data.operation ?? "jsonParse");
             const template = String(data.template ?? "");
             out = { text: applyTransform(inputText, operation, template) };
+
+          } else if (rawNodeType === "switch") {
+            const inputValue = resolveSwitchInput(nodeId, edgesCtx, outputsCtx, data.value);
+            const conditions = normalizeSwitchConditions(data.conditions);
+            const matched = conditions.find((c) =>
+              evaluateSwitchCondition(inputValue, c.operator, c.value),
+            );
+            const selectedOutputHandle = matched?.outputHandle ?? String(data.defaultOutputHandle ?? SWITCH_DEFAULT_OUTPUT_HANDLE);
+            for (const skipId of computeSwitchSkipNodeIds(nodeId, selectedOutputHandle, edgesCtx)) {
+              skippedCtx.add(skipId);
+            }
+            out = {
+              text: inputValue,
+              selectedOutputHandle,
+              matched: Boolean(matched),
+            };
 
           } else if (nodeType === "llm") {
             const provider = String(data.provider ?? "gemini");
             const apiKey = String(data.apiKey ?? "").trim();
             const model = String(data.model ?? "gemini-2.5-flash");
-            const systemPrompt = resolveTextInput(nodeId, HANDLE.systemPrompt, edges, outputsCtx, String(data.systemPrompt ?? ""));
-            const userMessage = resolveTextInput(nodeId, HANDLE.userMessage, edges, outputsCtx, String(data.userMessage ?? ""));
+            const systemPrompt = resolveTextInput(nodeId, HANDLE.systemPrompt, edgesCtx, outputsCtx, String(data.systemPrompt ?? ""));
+            const userMessage = resolveTextInput(nodeId, HANDLE.userMessage, edgesCtx, outputsCtx, String(data.userMessage ?? ""));
             if (!userMessage.trim()) throw new Error("User message is required");
 
-            const imageEdges = edges.filter((e) => e.target === nodeId && e.targetHandle === HANDLE.images);
+            const imageEdges = edgesCtx.filter((e) => e.target === nodeId && e.targetHandle === HANDLE.images);
             const imageUrls = imageEdges.map((e) => readImageUrl(outputsCtx, e.source)).filter((u): u is string => typeof u === "string");
             const run = await runLlmTask.triggerAndWait({
               workflowRunId,
@@ -345,15 +458,15 @@ export const workflowOrchestratorTask = task({
             out = run.output;
 
           } else if (nodeType === "cropImage") {
-            const imgEdge = edges.find((e) => e.target === nodeId && e.targetHandle === HANDLE.cropImageIn);
+            const imgEdge = edgesCtx.find((e) => e.target === nodeId && e.targetHandle === HANDLE.cropImageIn);
             const manualUrl = String(data.imageUrl ?? "");
             const imageUrl = imgEdge ? readImageUrl(outputsCtx, imgEdge.source) : manualUrl;
             if (!imageUrl) throw new Error("Crop image input is required");
 
-            const x = Number(resolveTextInput(nodeId, HANDLE.cropX, edges, outputsCtx, String(data.xPercent ?? 0)));
-            const y = Number(resolveTextInput(nodeId, HANDLE.cropY, edges, outputsCtx, String(data.yPercent ?? 0)));
-            const w = Number(resolveTextInput(nodeId, HANDLE.cropW, edges, outputsCtx, String(data.widthPercent ?? 100)));
-            const h = Number(resolveTextInput(nodeId, HANDLE.cropH, edges, outputsCtx, String(data.heightPercent ?? 100)));
+            const x = Number(resolveTextInput(nodeId, HANDLE.cropX, edgesCtx, outputsCtx, String(data.xPercent ?? 0)));
+            const y = Number(resolveTextInput(nodeId, HANDLE.cropY, edgesCtx, outputsCtx, String(data.yPercent ?? 0)));
+            const w = Number(resolveTextInput(nodeId, HANDLE.cropW, edgesCtx, outputsCtx, String(data.widthPercent ?? 100)));
+            const h = Number(resolveTextInput(nodeId, HANDLE.cropH, edgesCtx, outputsCtx, String(data.heightPercent ?? 100)));
 
             const cr = await cropImageTask.triggerAndWait({
               workflowRunId,
@@ -369,20 +482,20 @@ export const workflowOrchestratorTask = task({
             out = cr.output;
 
           } else if (nodeType === "extractFrame") {
-            const vEdge = edges.find((e) => e.target === nodeId && e.targetHandle === HANDLE.extractVideo);
+            const vEdge = edgesCtx.find((e) => e.target === nodeId && e.targetHandle === HANDLE.extractVideo);
             const manualV = String(data.videoUrl ?? "");
             const videoUrl = vEdge ? readVideoUrl(outputsCtx, vEdge.source) : manualV;
             if (!videoUrl) throw new Error("Video URL is required");
 
-            const ts = resolveTextInput(nodeId, HANDLE.extractTs, edges, outputsCtx, String(data.timestamp ?? "0"));
+            const ts = resolveTextInput(nodeId, HANDLE.extractTs, edgesCtx, outputsCtx, String(data.timestamp ?? "0"));
             const ex = await extractFrameTask.triggerAndWait({ workflowRunId, nodeId, userId, videoUrl, timestamp: ts });
             if (!ex.ok) throw new Error(String(ex.error ?? "Extract frame failed"));
             out = ex.output;
 
           } else if (nodeType === "httpRequest") {
             const method = String(data.method ?? "GET");
-            const url = resolveTextInput(nodeId, HANDLE.httpUrlIn, edges, outputsCtx, String(data.url ?? ""));
-            const body = resolveTextInput(nodeId, HANDLE.httpBodyIn, edges, outputsCtx, String(data.body ?? ""));
+            const url = resolveTextInput(nodeId, HANDLE.httpUrlIn, edgesCtx, outputsCtx, String(data.url ?? ""));
+            const body = resolveTextInput(nodeId, HANDLE.httpBodyIn, edgesCtx, outputsCtx, String(data.body ?? ""));
             const headers = String(data.headers ?? "{}");
             if (!url) throw new Error("HTTP Request URL is required");
 
@@ -391,7 +504,7 @@ export const workflowOrchestratorTask = task({
             out = run.output;
 
           } else if (nodeType === "notification") {
-            const inputText = resolveTextInput(nodeId, HANDLE.notificationIn, edges, outputsCtx, "");
+            const inputText = resolveTextInput(nodeId, HANDLE.notificationIn, edgesCtx, outputsCtx, "");
             const notifType = String(data.notifType ?? "console");
             const webhookUrl = String(data.webhookUrl ?? "");
             const messageTemplate = String(data.message ?? "{{input}}");
@@ -434,11 +547,16 @@ export const workflowOrchestratorTask = task({
           console.log(`[orchestrator]   ↷ skipping ${nodeId} (already executed inside loop)`);
           continue;
         }
+        if (skipped.has(nodeId)) {
+          console.log(`[orchestrator]   ↷ skipping ${nodeId} (switch-pruned branch)`);
+          continue;
+        }
 
         const node = nodes.find((n) => n.id === nodeId);
         if (!node) continue;
+        const rawNodeType = String(node.type ?? "");
         const nodeType = parseNodeType(node);
-        if (!nodeType) continue;
+        if (!nodeType && rawNodeType !== "switch") continue;
 
         console.log(`[orchestrator]   ▸ ${nodeType} (${nodeId}) — start`);
         const t0 = Date.now();
@@ -524,9 +642,13 @@ export const workflowOrchestratorTask = task({
                   },
                 };
                 const iterationFailed = new Set<string>();
+                const iterationSkipped = new Set<string>();
 
                 for (const loopLayer of downstreamLayers) {
                   for (const downstreamId of loopLayer) {
+                    if (iterationSkipped.has(downstreamId)) {
+                      continue;
+                    }
                     if (upstreamHasFailure(downstreamId, downstreamEdges, iterationFailed)) {
                       iterationFailed.add(downstreamId);
                       downstreamFailureCounts.set(
@@ -540,6 +662,8 @@ export const workflowOrchestratorTask = task({
                       downstreamId,
                       iterationOutputs,
                       iterationFailed,
+                      iterationSkipped,
+                      downstreamEdges,
                     );
 
                     if (downstreamOut) {
@@ -601,6 +725,33 @@ export const workflowOrchestratorTask = task({
             const lastPayload = String(data.lastPayload ?? "{}");
             console.log(`[orchestrator]   … webhookTrigger: hookId=${data.hookId}`);
             out = { text: lastPayload };
+
+          } else if (rawNodeType === "switch") {
+            const inputValue = resolveSwitchInput(nodeId, edges, outputs, data.value);
+            const conditions = normalizeSwitchConditions(data.conditions);
+            const matched = conditions.find((c) =>
+              evaluateSwitchCondition(inputValue, c.operator, c.value),
+            );
+            const selectedOutputHandle =
+              matched?.outputHandle ?? String(data.defaultOutputHandle ?? SWITCH_DEFAULT_OUTPUT_HANDLE);
+
+            const skipNodeIds = computeSwitchSkipNodeIds(nodeId, selectedOutputHandle, edges);
+            for (const skipId of skipNodeIds) {
+              if (skipId === nodeId || skipped.has(skipId)) continue;
+              skipped.add(skipId);
+              await markNode(skipId, NodeRunStatus.SKIPPED, {
+                durationMs: Date.now() - t0,
+                inputsJson: { switchNodeId: nodeId, selectedOutputHandle },
+                outputsJson: {},
+                error: `Skipped by switch branch: ${selectedOutputHandle}`,
+              });
+            }
+
+            out = {
+              text: inputValue,
+              selectedOutputHandle,
+              matched: Boolean(matched),
+            };
 
           } else if (nodeType === "scheduleTrigger") {
             const now = new Date().toISOString();
