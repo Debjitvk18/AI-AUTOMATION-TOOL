@@ -29,6 +29,8 @@ type SwitchCondition = { operator?: unknown; value?: unknown; outputHandle?: unk
 
 const SWITCH_VALUE_IN_HANDLE = "switch-value-in";
 const SWITCH_DEFAULT_OUTPUT_HANDLE = "default";
+const NODE_OUTPUT_EXPR_GLOBAL = /\{\{\$node\["([^"]+)"\]\.output\}\}/g;
+const NODE_OUTPUT_EXPR_EXACT = /^\{\{\$node\["([^"]+)"\]\.output\}\}$/;
 
 function stringifyLoopItem(item: unknown): string {
   if (typeof item === "string") return item;
@@ -198,6 +200,49 @@ function readTextOut(outputs: OutputsMap, id: string): string | undefined {
   return undefined;
 }
 
+function parseNodeOutputExpression(expression: string): { nodeId: string } | null {
+  const match = expression.match(NODE_OUTPUT_EXPR_EXACT);
+  if (!match) return null;
+  return { nodeId: match[1]! };
+}
+
+function stringifyExpressionValue(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function readNodeOutputForExpression(outputs: OutputsMap, nodeId: string): string | undefined {
+  const nodeOutput = outputs[nodeId];
+  if (!nodeOutput) return undefined;
+
+  const explicitOutput = stringifyExpressionValue(nodeOutput.output);
+  if (explicitOutput !== undefined) return explicitOutput;
+
+  const textFallback = readTextOut(outputs, nodeId);
+  if (textFallback !== undefined) return textFallback;
+
+  if (typeof nodeOutput.url === "string") return nodeOutput.url;
+  return undefined;
+}
+
+function resolveNodeExpressions(input: string, outputs: OutputsMap): string {
+  if (!input.includes("{{$node[\"")) return input;
+
+  return input.replace(NODE_OUTPUT_EXPR_GLOBAL, (fullMatch) => {
+    const parsed = parseNodeOutputExpression(fullMatch);
+    if (!parsed) return fullMatch;
+
+    const resolved = readNodeOutputForExpression(outputs, parsed.nodeId);
+    return resolved ?? fullMatch;
+  });
+}
+
 function readImageUrl(outputs: OutputsMap, id: string): string | undefined {
   const o = outputs[id];
   if (!o) return undefined;
@@ -226,10 +271,12 @@ function resolveTextInput(
   outputs: OutputsMap,
   manual: string,
 ): string {
+  const manualResolved = resolveNodeExpressions(manual, outputs);
   const e = edges.find((x) => x.target === nodeId && x.targetHandle === handle);
-  if (!e) return manual;
+  if (!e) return manualResolved;
   const t = readTextOut(outputs, e.source);
-  return t ?? manual;
+  const resolved = t ?? manualResolved;
+  return resolveNodeExpressions(resolved, outputs);
 }
 
 function upstreamHasFailure(nodeId: string, edges: Edge[], failed: Set<string>): boolean {
