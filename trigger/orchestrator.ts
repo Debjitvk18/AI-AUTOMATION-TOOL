@@ -21,6 +21,7 @@ export type WorkflowOrchestratorPayload = {
   userId: string;
   scope: RunScope;
   targetNodeIds?: string[];
+  resumeFromNodeId?: string;
   graph: { nodes: Node[]; edges: Edge[] };
 };
 
@@ -189,6 +190,10 @@ function computeSwitchSkipNodeIds(
 
 function asRecord(d: unknown): Record<string, unknown> {
   return d && typeof d === "object" && !Array.isArray(d) ? (d as Record<string, unknown>) : {};
+}
+
+function asOutputRecord(d: unknown): Record<string, unknown> | null {
+  return d && typeof d === "object" && !Array.isArray(d) ? (d as Record<string, unknown>) : null;
 }
 
 function readTextOut(outputs: OutputsMap, id: string): string | undefined {
@@ -377,7 +382,7 @@ export const workflowOrchestratorTask = task({
   id: "workflow-orchestrator",
   maxDuration: 3600,
   run: async (payload: WorkflowOrchestratorPayload) => {
-    const { workflowRunId, workflowId, userId, graph } = payload;
+    const { workflowRunId, workflowId, userId, graph, resumeFromNodeId } = payload;
     const { nodes, edges } = graph;
     const started = Date.now();
 
@@ -392,6 +397,57 @@ export const workflowOrchestratorTask = task({
     const skipped = new Set<string>();
     const retryCountByNode = new Map<string, number>();
     const loopManagedNodes = new Set<string>();
+
+    const previousNodeRuns = await prisma.nodeRun.findMany({
+      where: { runId: workflowRunId },
+      select: {
+        nodeId: true,
+        status: true,
+        outputsJson: true,
+      },
+    });
+
+    const previousStatusByNodeId = new Map<string, NodeRunStatus>();
+    const successNodeIds = new Set<string>();
+    for (const nodeRun of previousNodeRuns) {
+      previousStatusByNodeId.set(nodeRun.nodeId, nodeRun.status);
+
+      if (nodeRun.status === NodeRunStatus.SUCCESS) {
+        successNodeIds.add(nodeRun.nodeId);
+        const restoredOutputs = asOutputRecord(nodeRun.outputsJson);
+        outputs[nodeRun.nodeId] = restoredOutputs ?? {};
+      }
+
+      if (nodeRun.status === NodeRunStatus.FAILED) {
+        failed.add(nodeRun.nodeId);
+      }
+    }
+
+    const executionOrder = layers.flat();
+    const requestedResumeFrom = resumeFromNodeId?.trim();
+    const requestedResumeIsInPlan =
+      Boolean(requestedResumeFrom) && executionOrder.includes(requestedResumeFrom!);
+    const firstFailedInPlan = executionOrder.find(
+      (nodeId) => previousStatusByNodeId.get(nodeId) === NodeRunStatus.FAILED,
+    );
+    const resumeStartNodeId = requestedResumeIsInPlan
+      ? requestedResumeFrom
+      : firstFailedInPlan;
+    let reachedResumeStart = !resumeStartNodeId;
+
+    if (requestedResumeFrom && !requestedResumeIsInPlan) {
+      console.warn(
+        `[orchestrator] resumeFromNodeId=${requestedResumeFrom} is not in execution plan; falling back to first FAILED node if available.`,
+      );
+    }
+
+    if (resumeStartNodeId) {
+      console.log(`[orchestrator] Resume enabled from node ${resumeStartNodeId}`);
+    }
+
+    if (successNodeIds.size > 0) {
+      console.log(`[orchestrator] Restored outputs for ${successNodeIds.size} SUCCESS node(s)`);
+    }
 
     async function markNode(
       nodeId: string,
@@ -569,6 +625,7 @@ export const workflowOrchestratorTask = task({
           }
 
           outputsCtx[nodeId] = out;
+          failedCtx.delete(nodeId);
           return out;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -590,12 +647,25 @@ export const workflowOrchestratorTask = task({
       console.log(`[orchestrator] ── Layer ${layerIdx + 1}/${layers.length}: [${layer.join(", ")}]`);
 
       for (const nodeId of layer) {
+        if (!reachedResumeStart) {
+          if (nodeId !== resumeStartNodeId) {
+            console.log(`[orchestrator]   ↷ skipping ${nodeId} (before resume start)`);
+            continue;
+          }
+          reachedResumeStart = true;
+          console.log(`[orchestrator]   ↺ resume start reached at ${nodeId}`);
+        }
+
         if (loopManagedNodes.has(nodeId)) {
           console.log(`[orchestrator]   ↷ skipping ${nodeId} (already executed inside loop)`);
           continue;
         }
         if (skipped.has(nodeId)) {
           console.log(`[orchestrator]   ↷ skipping ${nodeId} (switch-pruned branch)`);
+          continue;
+        }
+        if (successNodeIds.has(nodeId)) {
+          console.log(`[orchestrator]   ↷ skipping ${nodeId} (already SUCCESS from previous execution)`);
           continue;
         }
 
@@ -757,6 +827,8 @@ export const workflowOrchestratorTask = task({
 
                 if (allFailed) {
                   failed.add(downstreamId);
+                } else {
+                  failed.delete(downstreamId);
                 }
 
                 outputs[downstreamId] = { items: aggregatedItems };
@@ -912,6 +984,7 @@ export const workflowOrchestratorTask = task({
 
             const ms = Date.now() - t0;
             outputs[nodeId] = out;
+            failed.delete(nodeId);
             const retryCount = retryCountByNode.get(nodeId) ?? 0;
             console.log(`[orchestrator]   ✓ ${nodeType} (${nodeId}) — SUCCESS ${ms}ms (attempt ${attempt}, retries=${retryCount})`);
             await markNode(nodeId, NodeRunStatus.SUCCESS, {
