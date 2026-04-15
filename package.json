@@ -12,6 +12,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "scheduler": "node scripts/scheduler.mjs",
+    "scheduler:once": "node scripts/scheduler.mjs --once",
     "trigger": "npx trigger.dev@latest dev",
     "trigger:dev": "npx trigger.dev@latest dev"
   },
