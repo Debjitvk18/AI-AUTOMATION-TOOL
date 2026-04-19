@@ -495,3 +495,212 @@ It includes both **no-LLM flows** (work even without Gemini API quota) and **AI 
 5. **Connect**: Schedule Trigger → HTTP Request → Data Transform → Notification
 
 6. **Expected result**: Each schedule run pushes KPI digest automatically.
+
+---
+
+## 🟠 Example 17: "Complex Incident Triage + Parallel Dispatch" (Free + LLM)
+
+**Goal**: Receive an incident payload and run priority routing, weather risk checks, customer enrichment, audit logging, and AI triage summary in parallel using free-tier services.
+
+### Why this is useful
+
+- Solves a real operations problem: faster and safer incident response
+- Uses only free services and built-in nodes
+- Demonstrates long workflow design with parallel branches, conditional logic, and LLM-assisted decision support
+
+### Free services used
+
+- Open-Meteo (no API key): `https://api.open-meteo.com`
+- JSONPlaceholder (no API key): `https://jsonplaceholder.typicode.com`
+- Gemini API free tier (for LLM triage)
+- Console/Webhook notifications
+
+### Sample webhook payload
+
+Use this when testing the flow:
+
+```json
+{
+  "ticketId": "INC-1042",
+  "severity": 8,
+  "lat": 22.5726,
+  "lon": 88.3639,
+  "customerId": 3,
+  "issue": "Internet down for 20 minutes",
+  "siteName": "Kolkata Branch"
+}
+```
+
+### Node Plan (25 nodes total)
+
+Start with one intake path, then fan out into 5 parallel branches.
+
+### Steps
+
+1. **Add Webhook Trigger node**
+   - This is your single incident intake point.
+
+2. **Add Data Transform node**
+   - Operation: `JSON Parse`
+   - Connect: Webhook Trigger → JSON Parse
+
+Now create 5 branches from **JSON Parse**.
+
+### Branch A: Priority Routing (6 nodes)
+
+3. **Add If/Else node**
+   - Field: `severity`
+   - Operator: `Greater Than`
+   - Value: `7`
+   - Connect: JSON Parse → If/Else A1
+
+4. **Add Send Notification node (Critical path)**
+   - Type: `Console Log` or `Webhook`
+   - Message template: `CRITICAL incident {{ticketId}} at {{siteName}}. Escalate now.`
+   - Connect: A1 `true` → Notification A-Critical
+
+5. **Add If/Else node**
+   - Field: `severity`
+   - Operator: `Greater Than`
+   - Value: `4`
+   - Connect: A1 `false` → If/Else A2
+
+6. **Add Send Notification node (High priority)**
+   - Message template: `HIGH incident {{ticketId}}. Response target: 1 hour.`
+   - Connect: A2 `true` → Notification A-High
+
+7. **Add Send Notification node (Standard queue)**
+   - Message template: `STANDARD incident {{ticketId}} queued for normal handling.`
+   - Connect: A2 `false` → Notification A-Standard
+
+### Branch B: Weather-Aware Dispatch (6 nodes)
+
+8. **Add Data Transform node**
+   - Operation: `Template (use {{input}})`
+   - Template: `https://api.open-meteo.com/v1/forecast?latitude={{lat}}&longitude={{lon}}&current_weather=true`
+   - Connect: JSON Parse → Transform B1
+
+9. **Add HTTP Request node**
+   - Method: `GET`
+   - URL: `{{input}}`
+   - Connect: B1 → HTTP B2
+
+10. **Add Data Transform node**
+   - Operation: `Extract JSON Field`
+   - Template: `current_weather.weathercode`
+   - Connect: B2 → Transform B3
+
+11. **Add If/Else node**
+   - Field: *(leave empty to evaluate current input)*
+   - Operator: `equals`
+   - Value: `95`
+   - Connect: B3 → If/Else B4
+   - Note: `95` commonly maps to thunderstorm conditions in weather code sets.
+
+12. **Add Send Notification node (Weather risk)**
+   - Message template: `Weather risk near {{siteName}}. Prefer remote support before field dispatch.`
+   - Connect: B4 `true` → Notification B-Risk
+
+13. **Add Send Notification node (Weather clear)**
+   - Message template: `Weather clear near {{siteName}}. Standard field dispatch allowed.`
+   - Connect: B4 `false` → Notification B-Clear
+
+### Branch C: Customer Context Enrichment (5 nodes)
+
+14. **Add Data Transform node**
+   - Operation: `Extract JSON Field`
+   - Template: `customerId`
+   - Connect: JSON Parse → Transform C1
+
+15. **Add Data Transform node**
+   - Operation: `Template (use {{input}})`
+   - Template: `https://jsonplaceholder.typicode.com/users/{{input}}`
+   - Connect: C1 → Transform C2
+
+16. **Add HTTP Request node**
+   - Method: `GET`
+   - URL: `{{input}}`
+   - Connect: C2 → HTTP C3
+
+17. **Add Data Transform node**
+   - Operation: `Extract JSON Field`
+   - Template: `email`
+   - Connect: C3 → Transform C4
+
+18. **Add Send Notification node**
+   - Message template: `Customer contact for {{ticketId}}: {{input}}`
+   - Connect: C4 → Notification C5
+
+### Branch D: Audit and Compliance Log (4 nodes)
+
+19. **Add Data Transform node**
+   - Operation: `Template (use {{input}})`
+   - Template: `{"ticket":"{{ticketId}}","severity":"{{severity}}","site":"{{siteName}}","issue":"{{issue}}","status":"received"}`
+   - Connect: JSON Parse → Transform D1
+
+20. **Add Send Notification node**
+   - Type: `Webhook` or `Console Log`
+   - Message template: `{{input}}`
+   - Connect: D1 → Notification D2
+
+21. **Add Send Notification node**
+   - Type: `Console Log`
+   - Message template: `Incident {{ticketId}} completed all parallel checks.`
+   - Connect: D2 → Notification D3
+
+### Branch E: AI Triage Summary (4 nodes)
+
+22. **Add Text node (System prompt)**
+   - Text:
+     `You are an incident triage assistant. Return valid JSON only with keys: priority (critical|high|normal), customer_impact (low|medium|high), immediate_action (string), and summary (max 40 words).`
+
+23. **Add Data Transform node**
+   - Operation: `Template (use {{input}})`
+   - Template:
+     `Ticket {{ticketId}} at {{siteName}}. Severity: {{severity}}. Issue: {{issue}}. Coordinates: {{lat}},{{lon}}. Customer ID: {{customerId}}. Produce triage JSON.`
+   - Connect: JSON Parse → Transform E1
+
+24. **Add Run LLM node**
+   - Model: `Gemini 2.0 Flash` (or your configured free-tier model)
+   - Connect:
+     - Text (System prompt) → LLM `system_prompt`
+     - Transform E1 → LLM `user_message`
+
+25. **Add Send Notification node**
+   - Type: `Console Log` or `Webhook`
+   - Message template: `AI triage for {{ticketId}}: {{input}}`
+   - Connect: LLM → Notification E2
+
+### Parallel wiring summary
+
+From the output of **JSON Parse**, connect to:
+
+- Branch A If/Else
+- Branch B Template
+- Branch C Extract Field
+- Branch D Template
+- Branch E Template
+
+This makes all five branches run concurrently.
+
+### LLM setup note
+
+- Ensure `GEMINI_API_KEY` is present in `.env` and Trigger.dev dashboard.
+- Keep prompt output constrained to JSON so it is easier to parse and forward downstream.
+
+### Test command
+
+After saving the flow and copying webhook URL:
+
+```powershell
+curl -X POST "http://localhost:3000/api/webhooks/trigger/<HOOK_ID>" -H "Content-Type: application/json" -d "{\"ticketId\":\"INC-1042\",\"severity\":8,\"lat\":22.5726,\"lon\":88.3639,\"customerId\":3,\"issue\":\"Internet down for 20 minutes\",\"siteName\":\"Kolkata Branch\"}"
+```
+
+### Expected result
+
+- Priority branch routes ticket by severity
+- Weather branch decides dispatch caution
+- Customer branch enriches with contact data
+- Audit branch emits normalized incident log
+- AI branch generates compact triage JSON with an actionable recommendation
+- All five happen in parallel for lower total response time
