@@ -4,6 +4,7 @@ import type { NodeRun, RunScope, RunStatus, WorkflowRun } from "@prisma/client";
 import { ChevronLeft, ChevronRight, History, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
+import { useWorkflowStore, type NodeRunStatus } from "@/store/workflow-store";
 
 type RunWithNodes = WorkflowRun & { nodeRuns: (NodeRun & { attempt: number; maxAttempts: number })[] };
 
@@ -47,6 +48,8 @@ export function RightHistoryPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
+  const setNodeRunStatuses = useWorkflowStore((s) => s.setNodeRunStatuses);
+
   const fetchRuns = useCallback(async (showLoading = true) => {
     if (!workflowId) return;
     if (showLoading) setLoading(true);
@@ -55,6 +58,15 @@ export function RightHistoryPanel({
       const j = await res.json().catch(() => null) as { runs?: RunWithNodes[] } | null;
       if (res.ok && Array.isArray(j?.runs)) {
         setRuns(j.runs);
+        // Drive node status dots from the latest run
+        const latestRun = j.runs[0];
+        if (latestRun?.nodeRuns?.length) {
+          const map: Record<string, NodeRunStatus> = {};
+          for (const nr of latestRun.nodeRuns) {
+            map[nr.nodeId] = nr.status as NodeRunStatus;
+          }
+          setNodeRunStatuses(map);
+        }
       } else if (!res.ok) {
         console.error("[NextFlow] Failed to fetch runs", j);
       }
@@ -63,7 +75,7 @@ export function RightHistoryPanel({
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [workflowId]);
+  }, [workflowId, setNodeRunStatuses]);
 
   useEffect(() => {
     void fetchRuns(true);

@@ -16,6 +16,8 @@ import { wouldCreateCycle } from "@/lib/graph";
 
 type Snapshot = { nodes: Node[]; edges: Edge[] };
 
+export type NodeRunStatus = "SUCCESS" | "FAILED" | "RUNNING" | "PENDING" | "SKIPPED";
+
 export type WorkflowStore = {
   workflowId: string | null;
   workflowName: string;
@@ -24,6 +26,10 @@ export type WorkflowStore = {
   runningNodeIds: Set<string>;
   past: Snapshot[];
   future: Snapshot[];
+  // --- NEW: node selection ---
+  selectedNodeId: string | null;
+  // --- NEW: per-node execution status map (driven by latest run) ---
+  nodeRunStatuses: Record<string, NodeRunStatus>;
   setWorkflowMeta: (id: string, name: string) => void;
   setGraph: (nodes: Node[], edges: Edge[]) => void;
   onNodesChange: (changes: NodeChange[]) => void;
@@ -37,6 +43,10 @@ export type WorkflowStore = {
   takeSnapshot: () => void;
   undo: () => void;
   redo: () => void;
+  // --- NEW actions ---
+  setSelectedNodeId: (id: string | null) => void;
+  removeEdge: (edgeId: string) => void;
+  setNodeRunStatuses: (map: Record<string, NodeRunStatus>) => void;
 };
 
 const maxHist = 45;
@@ -96,6 +106,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   runningNodeIds: new Set(),
   past: [],
   future: [],
+  selectedNodeId: null,
+  nodeRunStatuses: {},
 
   setWorkflowMeta: (id, name) => set({ workflowId: id, workflowName: name }),
 
@@ -216,4 +228,16 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       edges: next.edges,
     });
   },
+
+  // --- NEW action implementations ---
+  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+
+  removeEdge: (edgeId) => {
+    get().takeSnapshot();
+    set((s) => ({
+      edges: s.edges.filter((e) => e.id !== edgeId),
+    }));
+  },
+
+  setNodeRunStatuses: (map) => set({ nodeRunStatuses: map }),
 }));

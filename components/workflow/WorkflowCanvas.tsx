@@ -9,6 +9,7 @@ import {
   ReactFlow,
   type Connection,
   type Edge,
+  type Node,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect } from "react";
@@ -64,6 +65,7 @@ export function WorkflowCanvas() {
   const deleteSelected = useWorkflowStore((s) => s.deleteSelected);
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
+  const setSelectedNodeId = useWorkflowStore((s) => s.setSelectedNodeId);
   const { resolvedTheme } = useTheme();
 
   const isDark = resolvedTheme === "dark";
@@ -85,6 +87,17 @@ export function WorkflowCanvas() {
     },
     [nodes, edges],
   );
+
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      setSelectedNodeId(node.id);
+    },
+    [setSelectedNodeId],
+  );
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null);
+  }, [setSelectedNodeId]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -120,6 +133,8 @@ export function WorkflowCanvas() {
       onEdgesChange={onEdgesChange}
       onConnect={onConnect}
       isValidConnection={isValidConnection}
+      onNodeClick={onNodeClick}
+      onPaneClick={onPaneClick}
       fitView
       minZoom={0.2}
       maxZoom={1.8}

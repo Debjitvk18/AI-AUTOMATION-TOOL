@@ -19,6 +19,7 @@ import { useWorkflowStore } from "@/store/workflow-store";
 import { cn } from "@/lib/cn";
 import { ThemeToggle } from "../ThemeToggle";
 import { LeftSidebar } from "./LeftSidebar";
+import { NodeOutputPanel } from "./NodeOutputPanel";
 import { RightHistoryPanel } from "./RightHistoryPanel";
 import { WorkflowCanvas } from "./WorkflowCanvas";
 
@@ -347,6 +348,7 @@ export function WorkflowShell({
             <WorkflowCanvas />
           </ReactFlowProvider>
         </div>
+        <NodeOutputPanel workflowId={workflowId} />
         <RightHistoryPanel workflowId={workflowId} refreshKey={historyKey} />
       </div>
     </div>
