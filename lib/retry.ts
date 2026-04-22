@@ -21,18 +21,20 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
 export function parseRetryPolicy(nodeData: unknown): RetryPolicy {
   if (!nodeData || typeof nodeData !== "object") return { ...DEFAULT_RETRY_POLICY };
   
-  const raw = (nodeData as any).retryPolicy;
+  const raw = (nodeData as Record<string, unknown>).retryPolicy;
   if (!raw || typeof raw !== "object") return { ...DEFAULT_RETRY_POLICY };
 
+  const policy = raw as Record<string, unknown>;
+
   return {
-    enabled: Boolean(raw.enabled),
-    maxAttempts: Math.max(1, Math.min(10, Number(raw.maxAttempts) || 1)),
-    backoffType: ["none", "fixed", "exponential"].includes(raw.backoffType) 
-      ? (raw.backoffType as RetryBackoffType) 
+    enabled: Boolean(policy.enabled),
+    maxAttempts: Math.max(1, Math.min(10, Number(policy.maxAttempts) || 1)),
+    backoffType: ["none", "fixed", "exponential"].includes(policy.backoffType as string) 
+      ? (policy.backoffType as RetryBackoffType) 
       : "none",
-    initialDelayMs: Math.max(100, Number(raw.initialDelayMs) || 1000),
-    maxDelayMs: Math.max(100, Number(raw.maxDelayMs) || 30000),
-    retryableErrors: String(raw.retryableErrors || ""),
+    initialDelayMs: Math.max(100, Number(policy.initialDelayMs) || 1000),
+    maxDelayMs: Math.max(100, Number(policy.maxDelayMs) || 30000),
+    retryableErrors: String(policy.retryableErrors || ""),
   };
 }
 

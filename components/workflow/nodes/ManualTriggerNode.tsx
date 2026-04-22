@@ -25,7 +25,7 @@ export function ManualTriggerNode({ id, data, selected }: NodeProps) {
           className={`min-h-[72px] resize-y font-mono ${inputCls}`} />
 
         <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-          This data will be passed downstream when you click "Run all" or "Run selected".
+          This data will be passed downstream when you click &quot;Run all&quot; or &quot;Run selected&quot;.
         </p>
 
         {d.lastOutput ? (

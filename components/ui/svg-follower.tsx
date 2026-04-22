@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useRef, useEffect, useCallback, useState } from "react"
+import { useRef, useEffect, useCallback } from "react"
 
 interface Position {
   x: number
@@ -32,7 +32,7 @@ export function SVGFollower({
   const followersRef = useRef<Follower[]>([])
   const animationRef = useRef<number | null>(null)
 
-  const [isRecording, setIsRecording] = useState(false)
+  const isRecordingRef = useRef(false)
   const recordingRef = useRef<Position[]>([])
 
   class Follower {
@@ -188,8 +188,8 @@ export function SVGFollower({
 
     followersRef.current.forEach((f) => f.add(position))
 
-    if (isRecording) recordingRef.current.push(position)
-  }, [isRecording])
+    if (isRecordingRef.current) recordingRef.current.push(position)
+  }, [])
 
   const animate = useCallback(() => {
     followersRef.current.forEach((f) => f.trim())
@@ -206,6 +206,8 @@ export function SVGFollower({
     window.addEventListener("mousemove", handleMouseMove)
     animate()
 
+    const svgEl = svgRef.current
+
     return () => {
       window.removeEventListener("mousemove", handleMouseMove)
 
@@ -213,8 +215,9 @@ export function SVGFollower({
         cancelAnimationFrame(animationRef.current)
       }
 
-      svgRef.current?.replaceChildren()
+      svgEl?.replaceChildren()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [colors, animate, handleMouseMove])
 
   return (
