@@ -28,3 +28,8 @@ export const createRunSchema = z.object({
   scope: runScopeSchema,
   targetNodeIds: z.array(z.string()).optional(),
 });
+
+export const repairRequestSchema = z.object({
+  nodeId: z.string().min(1),
+  applyFix: z.boolean().default(false),
+});

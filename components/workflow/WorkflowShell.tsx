@@ -5,6 +5,7 @@ import { UserButton } from "@clerk/nextjs";
 import {
   ChevronDown,
   Download,
+  Eye,
   Loader2,
   Play,
   Plus,
@@ -55,6 +56,13 @@ export function WorkflowShell({
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
   const name = useWorkflowStore((s) => s.workflowName);
+  const nodes = useWorkflowStore((s) => s.nodes);
+  const edges = useWorkflowStore((s) => s.edges);
+  const setPreviewOutputs = useWorkflowStore((s) => s.setPreviewOutputs);
+  const clearPreview = useWorkflowStore((s) => s.clearPreview);
+  const setPreviewing = useWorkflowStore((s) => s.setPreviewing);
+  const previewing = useWorkflowStore((s) => s.previewing);
+  const previewOutputs = useWorkflowStore((s) => s.previewOutputs);
 
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -101,6 +109,28 @@ export function WorkflowShell({
   }, [workflowId]);
 
   const [importing, setImporting] = useState(false);
+
+  const runPreview = useCallback(async () => {
+    if (!workflowId || previewing) return;
+    setPreviewing(true);
+    try {
+      const res = await fetch(`/api/workflows/${workflowId}/preview`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ graphJson: { nodes, edges } }),
+      });
+      const data = await res.json().catch(() => null) as { preview?: Array<{ nodeId: string; nodeType: string; status: "SIMULATED" | "FROM_HISTORY"; output: Record<string, unknown> }> } | null;
+      if (res.ok && data?.preview) {
+        setPreviewOutputs(data.preview);
+      } else {
+        console.error("[NextFlow] Preview failed", data);
+      }
+    } catch (err) {
+      console.error("[NextFlow] Preview error", err);
+    } finally {
+      setPreviewing(false);
+    }
+  }, [workflowId, previewing, nodes, edges, setPreviewing, setPreviewOutputs]);
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-[var(--nf-bg)] text-[var(--nf-text)]">
@@ -265,6 +295,28 @@ export function WorkflowShell({
               dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/70"
           >
             Run selected
+          </button>
+          {/* Preview / Dry Run */}
+          <button
+            type="button"
+            disabled={previewing || !workflowId}
+            onClick={() => {
+              if (Object.keys(previewOutputs).length > 0) {
+                clearPreview();
+              } else {
+                void runPreview();
+              }
+            }}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-40",
+              Object.keys(previewOutputs).length > 0
+                ? "border-amber-500/40 bg-amber-100/60 text-amber-700 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70"
+                : "border-zinc-300 bg-zinc-100 text-zinc-600 hover:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-500",
+            )}
+            title={Object.keys(previewOutputs).length > 0 ? "Clear preview" : "Preview / Dry Run"}
+          >
+            {previewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+            {Object.keys(previewOutputs).length > 0 ? "Clear preview" : "Preview"}
           </button>
           {/* Delete Workflow */}
           <button

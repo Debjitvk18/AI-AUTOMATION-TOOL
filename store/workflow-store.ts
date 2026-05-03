@@ -18,6 +18,13 @@ type Snapshot = { nodes: Node[]; edges: Edge[] };
 
 export type NodeRunStatus = "SUCCESS" | "FAILED" | "RUNNING" | "PENDING" | "SKIPPED";
 
+export type PreviewOutput = {
+  nodeId: string;
+  nodeType: string;
+  status: "SIMULATED" | "FROM_HISTORY";
+  output: Record<string, unknown>;
+};
+
 export type WorkflowStore = {
   workflowId: string | null;
   workflowName: string;
@@ -30,6 +37,9 @@ export type WorkflowStore = {
   selectedNodeId: string | null;
   // --- NEW: per-node execution status map (driven by latest run) ---
   nodeRunStatuses: Record<string, NodeRunStatus>;
+  // --- Preview (Dry Run) ---
+  previewOutputs: Record<string, PreviewOutput>;
+  previewing: boolean;
   setWorkflowMeta: (id: string, name: string) => void;
   setGraph: (nodes: Node[], edges: Edge[]) => void;
   onNodesChange: (changes: NodeChange[]) => void;
@@ -47,6 +57,10 @@ export type WorkflowStore = {
   setSelectedNodeId: (id: string | null) => void;
   removeEdge: (edgeId: string) => void;
   setNodeRunStatuses: (map: Record<string, NodeRunStatus>) => void;
+  // --- Preview actions ---
+  setPreviewOutputs: (outputs: PreviewOutput[]) => void;
+  clearPreview: () => void;
+  setPreviewing: (v: boolean) => void;
 };
 
 const maxHist = 45;
@@ -108,6 +122,8 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   future: [],
   selectedNodeId: null,
   nodeRunStatuses: {},
+  previewOutputs: {},
+  previewing: false,
 
   setWorkflowMeta: (id, name) => set({ workflowId: id, workflowName: name }),
 
@@ -240,4 +256,14 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   },
 
   setNodeRunStatuses: (map) => set({ nodeRunStatuses: map }),
+
+  setPreviewOutputs: (outputs) => {
+    const map: Record<string, PreviewOutput> = {};
+    for (const o of outputs) {
+      map[o.nodeId] = o;
+    }
+    set({ previewOutputs: map });
+  },
+  clearPreview: () => set({ previewOutputs: {} }),
+  setPreviewing: (v) => set({ previewing: v }),
 }));

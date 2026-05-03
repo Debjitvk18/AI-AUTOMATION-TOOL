@@ -1006,11 +1006,23 @@ export const workflowOrchestratorTask = task({
               continue; // try again
             }
 
-            // Final failure
+            // Final failure — enrich with upstream context for auto-repair
             failed.add(nodeId);
             console.error(`[orchestrator]   ✗ ${nodeType} (${nodeId}) — FAILED ${ms}ms: ${errMsg}`);
+
+            // Snapshot upstream outputs for the repair engine
+            const upstreamSnapshot: Record<string, Record<string, unknown>> = {};
+            for (const e of edges) {
+              if (e.target === nodeId && outputs[e.source]) {
+                upstreamSnapshot[e.source] = outputs[e.source]!;
+              }
+            }
+
             await markNode(nodeId, NodeRunStatus.FAILED, {
-              durationMs: ms, error: errMsg, inputsJson: data, outputsJson: {},
+              durationMs: ms,
+              error: errMsg,
+              inputsJson: data,
+              outputsJson: { _failureContext: { upstreamOutputs: upstreamSnapshot } },
             });
             break;
           }
