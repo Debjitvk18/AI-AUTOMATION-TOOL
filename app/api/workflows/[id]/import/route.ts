@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { graphJsonSchema } from "@/lib/schemas";
+import { normalizeGraphJson, validateGraphJson } from "@/lib/workflow-graph";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +36,17 @@ export async function POST(req: Request, { params }: RouteParams) {
   const existing = await prisma.workflow.findFirst({ where: { id, userId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const graphJson = parsed.data.graphJson;
+  const graphJson = normalizeGraphJson(parsed.data.graphJson);
+  if (graphJson.nodes.length > 0) {
+    try {
+      validateGraphJson(graphJson);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Invalid graph" },
+        { status: 400 },
+      );
+    }
+  }
   const name =
     "name" in parsed.data && parsed.data.name ? parsed.data.name : undefined;
 

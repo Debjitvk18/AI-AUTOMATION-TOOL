@@ -11,6 +11,7 @@ import {
   Plus,
   Redo2,
   Save,
+  Sparkles,
   Trash2,
   Undo2,
   Upload,
@@ -39,6 +40,7 @@ export function WorkflowShell({
   running,
   workflowId,
   historyKey,
+  onGenerateFromPrompt,
 }: {
   onSave: () => Promise<void>;
   onRunFull: () => Promise<void>;
@@ -52,6 +54,7 @@ export function WorkflowShell({
   running: boolean;
   workflowId: string | null;
   historyKey: number;
+  onGenerateFromPrompt: (prompt: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
@@ -67,6 +70,10 @@ export function WorkflowShell({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [generatorOpen, setGeneratorOpen] = useState(false);
+  const [generatorPrompt, setGeneratorPrompt] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [generatorError, setGeneratorError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -280,6 +287,21 @@ export function WorkflowShell({
           </button>
           <button
             type="button"
+            disabled={!workflowId || generating}
+            onClick={() => {
+              setGeneratorError(null);
+              setGeneratorOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition disabled:opacity-40
+              border-violet-400/40 bg-violet-100/60 text-violet-700 hover:bg-violet-100
+              dark:bg-violet-950/40 dark:text-violet-200 dark:hover:bg-violet-950/70"
+            title="Generate workflow from prompt"
+          >
+            {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Generate
+          </button>
+          <button
+            type="button"
             disabled={running || !workflowId}
             onClick={() => void onRunFull()}
             className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-violet-500 disabled:opacity-40"
@@ -403,6 +425,71 @@ export function WorkflowShell({
         <NodeOutputPanel workflowId={workflowId} />
         <RightHistoryPanel workflowId={workflowId} refreshKey={historyKey} />
       </div>
+      {generatorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold">Generate Workflow</h2>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                  Describe the automation you want, and the graph will be generated into this workflow.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (generating) return;
+                  setGeneratorOpen(false);
+                }}
+                className="rounded-lg px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-zinc-100"
+              >
+                Close
+              </button>
+            </div>
+            <textarea
+              value={generatorPrompt}
+              onChange={(e) => setGeneratorPrompt(e.target.value)}
+              placeholder="Example: When I upload a video, extract a frame, describe it with AI, then send the description as a notification."
+              className="mt-3 min-h-40 w-full resize-y rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm outline-none transition focus:border-violet-500/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            />
+            {generatorError ? (
+              <p className="mt-2 text-xs text-red-500 dark:text-red-400">{generatorError}</p>
+            ) : null}
+            <div className="mt-3 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={generating}
+                onClick={() => setGeneratorOpen(false)}
+                className="rounded-lg border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 transition hover:border-zinc-400 dark:border-zinc-800 dark:text-zinc-200 dark:hover:border-zinc-600"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={generating || !generatorPrompt.trim() || !workflowId}
+                onClick={async () => {
+                  setGenerating(true);
+                  setGeneratorError(null);
+                  try {
+                    const result = await onGenerateFromPrompt(generatorPrompt.trim());
+                    if (!result.ok) {
+                      setGeneratorError(result.error);
+                      return;
+                    }
+                    setGeneratorOpen(false);
+                  } finally {
+                    setGenerating(false);
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-violet-500 disabled:opacity-40"
+              >
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                Generate graph
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

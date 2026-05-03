@@ -13,6 +13,8 @@ import { create } from "zustand";
 import { isValidEdge } from "@/lib/handles";
 import { parseNodeType } from "@/lib/graph";
 import { wouldCreateCycle } from "@/lib/graph";
+import { nodeTypeIdSchema } from "@/lib/node-types";
+import { defaultNodeData } from "@/lib/workflow-graph";
 
 type Snapshot = { nodes: Node[]; edges: Edge[] };
 
@@ -64,53 +66,6 @@ export type WorkflowStore = {
 };
 
 const maxHist = 45;
-
-function defaultData(type: string): Record<string, unknown> {
-  switch (type) {
-    case "text":
-      return { text: "" };
-    case "uploadImage":
-      return { url: "" };
-    case "uploadVideo":
-      return { url: "" };
-    case "llm":
-      return {
-        provider: "gemini",
-        apiKey: "",
-        model: "gemini-2.5-flash",
-        systemPrompt: "",
-        userMessage: "",
-        lastOutput: "",
-      };
-    case "cropImage":
-      return {
-        imageUrl: "",
-        xPercent: 0,
-        yPercent: 0,
-        widthPercent: 100,
-        heightPercent: 100,
-      };
-    case "extractFrame":
-      return { videoUrl: "", timestamp: "0" };
-    // --- n8n-style nodes ---
-    case "httpRequest":
-      return { method: "GET", url: "", headers: "{}", body: "", lastResponse: "" };
-    case "ifElse":
-      return { field: "", operator: "equals", value: "", lastResult: "" };
-    case "dataTransform":
-      return { operation: "jsonParse", template: "", lastOutput: "" };
-    case "webhookTrigger":
-      return { hookId: "", lastPayload: "" };
-    case "notification":
-      return { notifType: "webhook", webhookUrl: "", message: "", lastStatus: "" };
-    case "scheduleTrigger":
-      return { cron: "0 * * * *", description: "Every hour", lastRun: "" };
-    case "manualTrigger":
-      return { inputData: "{}", lastOutput: "" };
-    default:
-      return {};
-  }
-}
 
 export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   workflowId: null,
@@ -185,6 +140,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
     get().takeSnapshot();
     const id = nanoid();
     const pos = position ?? { x: 120 + Math.random() * 80, y: 120 + Math.random() * 80 };
+    const parsedType = nodeTypeIdSchema.safeParse(type);
     set((s) => ({
       nodes: [
         ...s.nodes,
@@ -192,7 +148,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
           id,
           type,
           position: pos,
-          data: defaultData(type),
+          data: parsedType.success ? defaultNodeData(parsedType.data) : {},
         },
       ],
     }));
