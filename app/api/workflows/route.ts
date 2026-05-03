@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createWorkflowSchema } from "@/lib/schemas";
+import { normalizeGraphJson, validateGraphJson } from "@/lib/workflow-graph";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +28,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
+  const graphJson = normalizeGraphJson(parsed.data.graphJson);
+  if (graphJson.nodes.length > 0) {
+    try {
+      validateGraphJson(graphJson);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Invalid graph" },
+        { status: 400 },
+      );
+    }
+  }
+
   const wf = await prisma.workflow.create({
     data: {
       userId,
       name: parsed.data.name ?? "Untitled workflow",
-      graphJson: parsed.data.graphJson as object,
+      graphJson: graphJson as object,
     },
   });
   return NextResponse.json({ workflow: wf });

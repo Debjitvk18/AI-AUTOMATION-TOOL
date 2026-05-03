@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 import { computeExecutableNodeIds } from "@/lib/plan";
 import { prisma } from "@/lib/prisma";
 import { createRunSchema } from "@/lib/schemas";
+import { normalizeGraphJson, validateGraphJson } from "@/lib/workflow-graph";
 import { workflowOrchestratorTask } from "@/trigger/orchestrator";
 
 export const dynamic = "force-dynamic";
@@ -44,7 +45,17 @@ export async function POST(req: Request, { params }: RouteParams) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { graphJson, scope, targetNodeIds } = parsed.data;
+  const { scope, targetNodeIds } = parsed.data;
+  const graphJson = normalizeGraphJson(parsed.data.graphJson);
+  try {
+    validateGraphJson(graphJson);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Invalid graph" },
+      { status: 400 },
+    );
+  }
+
   const nodes = graphJson.nodes as Node[];
   const edges = graphJson.edges as Edge[];
 

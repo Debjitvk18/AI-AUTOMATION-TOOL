@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useWorkflowStore } from "@/store/workflow-store";
+import { normalizeGraphJson } from "@/lib/workflow-graph";
 import { WorkflowShell } from "./WorkflowShell";
 
 type WorkflowListItem = { id: string; name: string };
@@ -58,8 +59,9 @@ export function WorkflowPageClient() {
       return;
     }
     const wf = gj.workflow;
-    const nodesSafe = Array.isArray(wf.graphJson?.nodes) ? wf.graphJson.nodes : [];
-    const edgesSafe = Array.isArray(wf.graphJson?.edges) ? wf.graphJson.edges : [];
+    const normalized = normalizeGraphJson(wf.graphJson ?? { nodes: [], edges: [] });
+    const nodesSafe = normalized.nodes;
+    const edgesSafe = normalized.edges;
     setWorkflowMeta(wf.id, wf.name);
     setGraph(nodesSafe as never[], edgesSafe as never[]);
     setHistoryKey((k) => k + 1);
@@ -238,6 +240,54 @@ export function WorkflowPageClient() {
     }
   }, [workflowId, setWorkflowMeta, refreshWorkflowList]);
 
+  const onGenerateFromPrompt = useCallback(
+    async (prompt: string) => {
+      if (!workflowId) return { ok: false as const, error: "Save or create a workflow first." };
+
+      const res = await fetch("/api/workflows/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+
+      const payload = await parseJsonSafe<{
+        graphJson?: { nodes?: unknown[]; edges?: unknown[] };
+        error?: string;
+        reason?: string;
+      }>(res);
+
+      if (!res.ok || !payload?.graphJson) {
+        return {
+          ok: false as const,
+          error: payload?.reason || payload?.error || "Workflow generation failed",
+        };
+      }
+
+      const normalized = normalizeGraphJson(payload.graphJson);
+      setGraph(normalized.nodes as never[], normalized.edges as never[]);
+
+      const saveRes = await fetch(`/api/workflows/${workflowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          graphJson: normalized,
+        }),
+      });
+
+      if (!saveRes.ok) {
+        const savePayload = await parseJsonSafe<{ error?: string }>(saveRes);
+        return {
+          ok: false as const,
+          error: savePayload?.error || "Workflow was generated but could not be saved",
+        };
+      }
+
+      setHistoryKey((k) => k + 1);
+      return { ok: true as const };
+    },
+    [workflowId, setGraph],
+  );
+
   return (
     <WorkflowShell
       onSave={save}
@@ -252,6 +302,7 @@ export function WorkflowPageClient() {
       running={running}
       workflowId={workflowId}
       historyKey={historyKey}
+      onGenerateFromPrompt={onGenerateFromPrompt}
     />
   );
 }

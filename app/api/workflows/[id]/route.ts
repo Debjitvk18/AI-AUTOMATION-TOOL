@@ -2,6 +2,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { updateWorkflowSchema } from "@/lib/schemas";
+import { normalizeGraphJson, validateGraphJson } from "@/lib/workflow-graph";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +34,26 @@ export async function PATCH(req: Request, { params }: RouteParams) {
   const existing = await prisma.workflow.findFirst({ where: { id, userId } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  let graphJson: ReturnType<typeof normalizeGraphJson> | undefined;
+  if (parsed.data.graphJson) {
+    graphJson = normalizeGraphJson(parsed.data.graphJson);
+    if (graphJson.nodes.length > 0) {
+      try {
+        validateGraphJson(graphJson);
+      } catch (error) {
+        return NextResponse.json(
+          { error: error instanceof Error ? error.message : "Invalid graph" },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const wf = await prisma.workflow.update({
     where: { id },
     data: {
       ...(parsed.data.name ? { name: parsed.data.name } : {}),
-      ...(parsed.data.graphJson ? { graphJson: parsed.data.graphJson as object } : {}),
+      ...(graphJson ? { graphJson: graphJson as object } : {}),
     },
   });
   return NextResponse.json({ workflow: wf });
